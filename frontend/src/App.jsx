@@ -29,20 +29,42 @@ import {
   CreditCard,
   Layers,
   ArrowDownLeft,
-  ArrowUpRight
+  ArrowUpRight,
+  LogOut
 } from 'lucide-react';
 import { speechQueue } from './SpeechSynthesisQueue';
+import LoginScreen from './components/LoginScreen';
 
 const API_BASE = 'http://localhost:5000/api';
 const WS_URL = 'ws://localhost:5000';
 
 function App() {
+  // Authentication & User Session
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+
   // Navigation & Role
   const [activeTab, setActiveTab] = useState('pos'); // pos, dashboard, history, parsers, inventory, suppliers, reports, settings, logs
   const [role, setRole] = useState('OPERATOR'); // OPERATOR, ADMIN
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
+
+  const handleLogin = (userSession) => {
+    setCurrentUser(userSession);
+    setRole(userSession.role);
+    setIsAuthenticated(true);
+    if (userSession.role === 'OPERATOR') {
+      setActiveTab('pos');
+    } else {
+      setActiveTab('dashboard');
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+  };
 
   // WebSocket & System Status
   const [wsConnected, setWsConnected] = useState(false);
@@ -725,6 +747,10 @@ function App() {
     }).format(val);
   };
 
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
   return (
     <div className="app-container">
       {/* -------------------------------------------------------------
@@ -798,13 +824,28 @@ function App() {
             <span>Gmail: {gmailConnected ? 'Verificando' : (gmailConfigured ? 'Requiere Token' : 'Sin Configurar')}</span>
           </div>
           
-          <button 
-            className={`role-badge ${role === 'ADMIN' ? 'admin' : 'operator'}`}
-            onClick={toggleRole}
-          >
-            <Shield size={14} />
-            Rol: {role === 'ADMIN' ? 'Administrador' : 'Operario'}
-          </button>
+          <div className="user-session-pill">
+            <User size={14} className="text-sky-400" />
+            <span className="session-code">{currentUser?.cashierCode || 'CAJERO'}</span>
+            
+            <button 
+              className={`role-badge ${role === 'ADMIN' ? 'admin' : 'operator'}`}
+              onClick={toggleRole}
+              title="Cambiar rol (requiere PIN)"
+            >
+              <Shield size={13} />
+              {role === 'ADMIN' ? 'Admin' : 'Operario'}
+            </button>
+
+            <button 
+              className="btn-logout"
+              onClick={handleLogout}
+              title="Cerrar sesión del sistema"
+            >
+              <LogOut size={13} />
+              <span>Salir</span>
+            </button>
+          </div>
         </div>
       </header>
 
