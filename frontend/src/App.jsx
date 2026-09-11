@@ -26,14 +26,18 @@ import {
   DollarSign,
   Package,
   Users,
+  User,
   CreditCard,
   Layers,
   ArrowDownLeft,
   ArrowUpRight,
-  LogOut
+  LogOut,
+  UserCheck
 } from 'lucide-react';
 import { speechQueue } from './SpeechSynthesisQueue';
 import LoginScreen from './components/LoginScreen';
+import CashierSessionBanner from './components/CashierSessionBanner';
+import EmployeeManagement from './components/EmployeeManagement';
 
 const API_BASE = 'http://localhost:5000/api';
 const WS_URL = 'ws://localhost:5000';
@@ -229,7 +233,9 @@ function App() {
     fetchSuppliers();
 
     return () => {
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+        wsRef.current.close();
+      }
     };
   }, []);
 
@@ -816,6 +822,15 @@ function App() {
             <Terminal size={18} />
             Auditoría
           </button>
+          {role === 'ADMIN' && (
+            <button 
+              className={`nav-item ${activeTab === 'employees' ? 'active' : ''}`}
+              onClick={() => setActiveTab('employees')}
+            >
+              <UserCheck size={18} />
+              Empleados & Turnos
+            </button>
+          )}
         </nav>
 
         <div className="header-actions">
@@ -849,10 +864,18 @@ function App() {
         </div>
       </header>
 
+      {/* BANNER DE DATOS DE CAJERO, RELOJ Y CALENDARIO */}
+      <CashierSessionBanner currentUser={currentUser} role={role} />
+
       {/* -------------------------------------------------------------
          CONTENT CONTAINER
          ------------------------------------------------------------- */}
       <main className="content-layout">
+        
+        {/* TAB N: GESTIÓN DE EMPLEADOS Y TURNOS */}
+        {activeTab === 'employees' && (
+          <EmployeeManagement />
+        )}
         
         {/* -------------------------------------------------------------
            TAB 1: TERMINAL POS (CAJA)
