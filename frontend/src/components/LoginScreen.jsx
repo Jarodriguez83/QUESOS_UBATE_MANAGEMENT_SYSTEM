@@ -85,10 +85,20 @@ export default function LoginScreen({ onLogin }) {
 
     setTimeout(() => {
       setIsSubmitting(false);
+
+      const codeUpper = cashierCode.trim().toUpperCase();
+      let cashierName = `Cajero ${codeUpper}`;
+
+      if (codeUpper === 'CJ-101' || codeUpper === 'OPE-101') cashierName = 'Juan Rodríguez';
+      else if (codeUpper === 'CJ-102') cashierName = 'María Pérez';
+      else if (codeUpper === 'ADM-001') cashierName = 'Carlos Gómez';
+
       onLogin({
-        cashierCode: cashierCode.trim().toUpperCase(),
+        cashierCode: codeUpper,
+        cashierName: cashierName,
         role: selectedMode,
-        loginTime: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+        loginTime: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
+        shiftDate: new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
       });
     }, 400);
   };
