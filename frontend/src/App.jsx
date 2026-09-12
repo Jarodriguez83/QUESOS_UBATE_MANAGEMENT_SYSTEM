@@ -822,15 +822,13 @@ function App() {
             <Terminal size={18} />
             Auditoría
           </button>
-          {role === 'ADMIN' && (
-            <button 
-              className={`nav-item ${activeTab === 'employees' ? 'active' : ''}`}
-              onClick={() => setActiveTab('employees')}
-            >
-              <UserCheck size={18} />
-              Empleados & Turnos
-            </button>
-          )}
+          <button 
+            className={`nav-item ${activeTab === 'employees' ? 'active' : ''}`}
+            onClick={() => setActiveTab('employees')}
+          >
+            <UserCheck size={18} />
+            {role === 'ADMIN' ? 'Empleados & Turnos' : 'Turnos Asignados'}
+          </button>
         </nav>
 
         <div className="header-actions">
@@ -874,7 +872,7 @@ function App() {
         
         {/* TAB N: GESTIÓN DE EMPLEADOS Y TURNOS */}
         {activeTab === 'employees' && (
-          <EmployeeManagement />
+          <EmployeeManagement currentUser={currentUser} role={role} />
         )}
         
         {/* -------------------------------------------------------------
