@@ -18,13 +18,59 @@ import {
   Phone,
   FileText,
   KeyRound,
-  Filter
+  Filter,
+  CalendarDays,
+  Sun,
+  Moon,
+  Info,
+  Building2
 } from 'lucide-react';
 
-export default function EmployeeManagement() {
-  const [activeTab, setActiveTab] = useState('list'); // 'list' | 'schedule'
+// DETALLES Y HORARIOS EXACTOS DE CADA TURNO
+export const SHIFT_DETAILS = {
+  TC: {
+    name: 'Turno Completo',
+    code: 'TC',
+    badgeClass: 'tc',
+    weekdayHours: '09:00 AM - 09:00 PM',
+    sundayHours: '09:00 AM - 08:00 PM',
+    desc: 'Jornada completa de apertura a cierre'
+  },
+  TM: {
+    name: 'Turno Mañana',
+    code: 'TM',
+    badgeClass: 'tm',
+    weekdayHours: '09:00 AM - 06:00 PM',
+    sundayHours: '09:00 AM - 06:00 PM',
+    desc: 'Apertura y primera jornada del día'
+  },
+  TT: {
+    name: 'Turno Tarde',
+    code: 'TT',
+    badgeClass: 'tt',
+    weekdayHours: '01:00 PM - 09:00 PM',
+    sundayHours: '12:00 PM - 08:00 PM',
+    desc: 'Jornada de tarde y cierre del negocio'
+  },
+  LIB: {
+    name: 'Día Libre / Descanso',
+    code: 'LIB',
+    badgeClass: 'lib',
+    weekdayHours: 'Descanso Programado',
+    sundayHours: 'Descanso Programado',
+    desc: 'Descanso semanal obligatorio'
+  }
+};
+
+export default function EmployeeManagement({ currentUser, role = 'ADMIN' }) {
+  const [activeTab, setActiveTab] = useState('list'); // 'list' | 'schedule' | 'assigned'
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
+
+  // Día seleccionado para consulta en "Turnos Asignados" (por defecto el día actual)
+  const currentDayNameIndex = new Date().getDay(); // 0: Domingo, 1: Lunes...
+  const dayNamesMap = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const [selectedConsultDay, setSelectedConsultDay] = useState(dayNamesMap[currentDayNameIndex] || 'Lunes');
 
   // ESTADO DE EMPLEADOS (PRECARGADO CON DATOS DEMO)
   const [employees, setEmployees] = useState([
@@ -74,12 +120,11 @@ export default function EmployeeManagement() {
     }
   ]);
 
-  // ESTADO DE PROGRAMACIÓN DE TURNOS POR DÍA
-  // Estructura: { employeeId: { Lunes: 'Mañana', Martes: 'Tarde', ... } }
+  // ESTADO DE PROGRAMACIÓN DE TURNOS POR DÍA DE LA SEMANA
   const [schedule, setSchedule] = useState({
-    1: { Lunes: 'TM', Martes: 'TM', Miércoles: 'TM', Jueves: 'TM', Viernes: 'TM', Sábado: 'LIB', Domingo: 'LIB' },
+    1: { Lunes: 'TM', Martes: 'TM', Miércoles: 'TM', Jueves: 'TM', Viernes: 'TM', Sábado: 'TC', Domingo: 'LIB' },
     2: { Lunes: 'TT', Martes: 'TT', Miércoles: 'TT', Jueves: 'TT', Viernes: 'TT', Sábado: 'TM', Domingo: 'LIB' },
-    3: { Lunes: 'TC', Martes: 'TC', Miércoles: 'TC', Jueves: 'TC', Viernes: 'TC', Sábado: 'LIB', Domingo: 'LIB' },
+    3: { Lunes: 'TC', Martes: 'TC', Miércoles: 'TC', Jueves: 'TC', Viernes: 'TC', Sábado: 'LIB', Domingo: 'TC' },
     4: { Lunes: 'LIB', Martes: 'LIB', Miércoles: 'LIB', Jueves: 'LIB', Viernes: 'LIB', Sábado: 'LIB', Domingo: 'LIB' }
   });
 
@@ -161,18 +206,15 @@ export default function EmployeeManagement() {
     }
 
     if (editingEmployee) {
-      // Editar
       setEmployees(employees.map(emp => emp.id === editingEmployee.id ? { ...emp, ...formData } : emp));
       triggerSuccessToast('Empleado actualizado correctamente.');
     } else {
-      // Crear
       const newEmp = {
         id: Date.now(),
         ...formData,
         createdDate: new Date().toISOString().split('T')[0]
       };
       setEmployees([...employees, newEmp]);
-      // Asignar horario inicial libre
       setSchedule({
         ...schedule,
         [newEmp.id]: { Lunes: 'TM', Martes: 'TM', Miércoles: 'TM', Jueves: 'TM', Viernes: 'TM', Sábado: 'LIB', Domingo: 'LIB' }
@@ -183,7 +225,7 @@ export default function EmployeeManagement() {
     setShowEmployeeModal(false);
   };
 
-  // CAMBIAR ESTADO DE EMPLEADO (DESACTIVAR / ACTIVAR)
+  // CAMBIAR ESTADO DE EMPLEADO
   const handleToggleStatus = (id) => {
     setEmployees(employees.map(emp => {
       if (emp.id === id) {
@@ -197,13 +239,13 @@ export default function EmployeeManagement() {
 
   // ELIMINAR EMPLEADO
   const handleDeleteEmployee = (id) => {
-    if (window.confirm('¿Estás seguro de eliminar este empleado del sistema?')) {
+    if (window.confirm('¿Estás seguro de eliminar este empleado del registro?')) {
       setEmployees(employees.filter(emp => emp.id !== id));
-      triggerSuccessToast('Empleado eliminado del registro.');
+      triggerSuccessToast('Empleado eliminado del sistema.');
     }
   };
 
-  // CAMBIAR TURNO EN LA MATRIZ DE PROGRAMACIÓN
+  // CAMBIAR TURNO EN MATRIZ DE PROGRAMACIÓN
   const handleScheduleChange = (employeeId, day, newShift) => {
     setSchedule({
       ...schedule,
@@ -215,7 +257,7 @@ export default function EmployeeManagement() {
   };
 
   const handleSaveSchedule = () => {
-    triggerSuccessToast('Programación de turnos semanal guardada con éxito.');
+    triggerSuccessToast('Programación de turnos guardada con éxito.');
   };
 
   const triggerSuccessToast = (msg) => {
@@ -237,10 +279,13 @@ export default function EmployeeManagement() {
 
   const weekDays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
+  // OBTENER EL EMPLEADO ACTUAL LOGUEADO
+  const activeEmployee = employees.find(e => e.cashierCode === currentUser?.cashierCode) || employees[0];
+
   return (
     <div className="employee-mgmt-container">
       
-      {/* NOTIFICACIÓN TOAST DE ÉXITO */}
+      {/* NOTIFICACIÓN TOAST */}
       {saveSuccessMsg && (
         <div className="toast-success-banner">
           <Check size={18} />
@@ -255,8 +300,8 @@ export default function EmployeeManagement() {
             <Users size={24} />
           </div>
           <div>
-            <h2>Gestión de Empleados & Programación de Turnos</h2>
-            <p>Administra los códigos de cajeros, roles, datos de personal y horarios semanales.</p>
+            <h2>Gestión de Personal, Horarios & Turnos Asignados</h2>
+            <p>Atención al público: Lunes a Sábado (09:00 AM - 09:00 PM) | Domingos y Festivos (09:00 AM - 08:00 PM)</p>
           </div>
         </div>
 
@@ -268,7 +313,7 @@ export default function EmployeeManagement() {
             onClick={() => setActiveTab('list')}
           >
             <UserCheck size={16} />
-            <span>Directorio de Empleados ({employees.length})</span>
+            <span>Directorio ({employees.length})</span>
           </button>
           
           <button
@@ -277,7 +322,16 @@ export default function EmployeeManagement() {
             onClick={() => setActiveTab('schedule')}
           >
             <Calendar size={16} />
-            <span>Programación de Turnos</span>
+            <span>Programador de Turnos</span>
+          </button>
+
+          <button
+            type="button"
+            className={`tab-btn ${activeTab === 'assigned' ? 'active' : ''}`}
+            onClick={() => setActiveTab('assigned')}
+          >
+            <CalendarDays size={16} />
+            <span>Turnos Asignados</span>
           </button>
         </div>
       </div>
@@ -419,7 +473,7 @@ export default function EmployeeManagement() {
           <div className="schedule-header-bar">
             <div>
               <h3>Programación Semanal de Horarios y Turnos</h3>
-              <p>Asigna y planifica los turnos diarios de cada operario o cajero para la semana activa.</p>
+              <p>Planifica y asigna los turnos diarios con 1 día de descanso libre a la semana.</p>
             </div>
 
             <button
@@ -432,23 +486,23 @@ export default function EmployeeManagement() {
             </button>
           </div>
 
-          {/* LEYENDA DE CONVENCIONES DE TURNOS */}
+          {/* LEYENDA DE CONVENCIONES DE TURNOS REQUISITADAS */}
           <div className="schedule-legend">
             <div className="legend-item">
+              <span className="legend-badge tc">TC</span>
+              <span><strong>Turno Completo</strong> (09:00 AM - 09:00 PM / Dom: 09:00 AM - 08:00 PM)</span>
+            </div>
+            <div className="legend-item">
               <span className="legend-badge tm">TM</span>
-              <span><strong>Turno Mañana</strong> (06:00 AM - 02:00 PM)</span>
+              <span><strong>Turno Mañana</strong> (09:00 AM - 06:00 PM)</span>
             </div>
             <div className="legend-item">
               <span className="legend-badge tt">TT</span>
-              <span><strong>Turno Tarde</strong> (02:00 PM - 10:00 PM)</span>
-            </div>
-            <div className="legend-item">
-              <span className="legend-badge tc">TC</span>
-              <span><strong>Turno Completo</strong> (08:00 AM - 06:00 PM)</span>
+              <span><strong>Turno Tarde</strong> (01:00 PM - 09:00 PM / Dom: 12:00 PM - 08:00 PM)</span>
             </div>
             <div className="legend-item">
               <span className="legend-badge lib">LIB</span>
-              <span><strong>Día Libre</strong></span>
+              <span><strong>Día Libre / Descanso</strong> (1 día a la semana)</span>
             </div>
           </div>
 
@@ -459,7 +513,10 @@ export default function EmployeeManagement() {
                 <tr>
                   <th style={{ width: '220px' }}>Empleado</th>
                   {weekDays.map((day, idx) => (
-                    <th key={idx}>{day}</th>
+                    <th key={idx}>
+                      <div>{day}</div>
+                      <span className="day-sub-label">{day === 'Domingo' ? '09:00 AM - 08:00 PM' : '09:00 AM - 09:00 PM'}</span>
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -482,10 +539,10 @@ export default function EmployeeManagement() {
                             onChange={(e) => handleScheduleChange(emp.id, day, e.target.value)}
                             className={`shift-select-badge ${currentShift.toLowerCase()}`}
                           >
+                            <option value="TC">TC - Completo</option>
                             <option value="TM">TM - Mañana</option>
                             <option value="TT">TT - Tarde</option>
-                            <option value="TC">TC - Completo</option>
-                            <option value="LIB">LIB - Libre</option>
+                            <option value="LIB">LIB - Descanso</option>
                           </select>
                         </td>
                       );
@@ -499,7 +556,191 @@ export default function EmployeeManagement() {
         </div>
       )}
 
-      {/* ================= MODAL CREAR / EDITAR EMPLEADO ================= */}
+      {/* ================= SECCIÓN 3: TURNOS ASIGNADOS (VISTA OPERARIO Y ADMIN) ================= */}
+      {activeTab === 'assigned' && (
+        <div className="assigned-shifts-section">
+          
+          <div className="assigned-header-box">
+            <div className="day-selector-bar">
+              <span className="selector-title">
+                <CalendarDays size={18} className="text-sky-400" />
+                Seleccionar Día de Consulta:
+              </span>
+              
+              <div className="days-pill-row">
+                {weekDays.map((day) => (
+                  <button
+                    key={day}
+                    type="button"
+                    className={`day-pill-btn ${selectedConsultDay === day ? 'active' : ''}`}
+                    onClick={() => setSelectedConsultDay(day)}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="store-hours-info-badge">
+              <Building2 size={16} />
+              <span>
+                Atención al público en <strong>{selectedConsultDay}</strong>: {' '}
+                <strong>{selectedConsultDay === 'Domingo' ? '09:00 AM - 08:00 PM (Domingos y Festivos)' : '09:00 AM - 09:00 PM (Lunes a Sábado)'}</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* VISTA OPERARIO: TARJETA DE TURNO PERSONAL DE CAJERO */}
+          {role !== 'ADMIN' ? (
+            <div className="operario-shift-view">
+              {(() => {
+                const shiftCode = schedule[activeEmployee.id]?.[selectedConsultDay] || 'TM';
+                const detail = SHIFT_DETAILS[shiftCode];
+                const isSunday = selectedConsultDay === 'Domingo';
+                const exactHours = isSunday ? detail.sundayHours : detail.weekdayHours;
+                const isRest = shiftCode === 'LIB';
+
+                return (
+                  <div className={`operario-shift-card ${isRest ? 'is-rest' : ''}`}>
+                    <div className="shift-card-top">
+                      <div className="emp-profile-pill">
+                        <div className="avatar-circle">{activeEmployee.name.substring(0, 2).toUpperCase()}</div>
+                        <div>
+                          <h3>{activeEmployee.name}</h3>
+                          <span>Código: <strong>{activeEmployee.cashierCode}</strong> • {activeEmployee.role}</span>
+                        </div>
+                      </div>
+
+                      <span className={`status-badge-large ${detail.badgeClass}`}>
+                        {isRest ? 'DÍA LIBRE DE DESCANSO' : 'TURNO PROGRAMADO'}
+                      </span>
+                    </div>
+
+                    <div className="shift-card-body">
+                      <div className="shift-detail-column">
+                        <span className="detail-label">Día de la semana:</span>
+                        <strong className="detail-value-highlight">{selectedConsultDay}</strong>
+                      </div>
+
+                      <div className="shift-detail-column">
+                        <span className="detail-label">Nombre del Turno:</span>
+                        <strong className="detail-value">{detail.name}</strong>
+                      </div>
+
+                      <div className="shift-detail-column">
+                        <span className="detail-label">Horario de Trabajo Asignado:</span>
+                        <div className="time-badge-box">
+                          <Clock size={16} />
+                          <span>{exactHours}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="shift-card-footer">
+                      <Info size={16} className="text-amber-400" />
+                      <span>{detail.desc}. En caso de requerir un cambio de turno, contactar con el Administrador.</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            
+            /* VISTA ADMINISTRADOR: RESUMEN DE PERSONAL PROGRAMADO POR DÍA */
+            <div className="admin-shift-summary">
+              <div className="summary-title-row">
+                <h3>Reporte Consolidado de Personal - {selectedConsultDay}</h3>
+                <span className="summary-count">
+                  Total Personal Programado: <strong>{employees.filter(e => e.status === 'Activo').length} empleados</strong>
+                </span>
+              </div>
+
+              <div className="shifts-groups-grid">
+                
+                {/* TURNO COMPLETO */}
+                <div className="shift-group-card tc">
+                  <div className="group-card-header">
+                    <span className="badge-title tc">TURNO COMPLETO</span>
+                    <span className="group-hours">{selectedConsultDay === 'Domingo' ? '09:00 AM - 08:00 PM' : '09:00 AM - 09:00 PM'}</span>
+                  </div>
+                  <div className="group-members-list">
+                    {employees.filter(e => e.status === 'Activo' && (schedule[e.id]?.[selectedConsultDay] || 'TM') === 'TC').map(emp => (
+                      <div key={emp.id} className="member-row">
+                        <span className="member-name">{emp.name}</span>
+                        <span className="member-code">{emp.cashierCode}</span>
+                      </div>
+                    ))}
+                    {employees.filter(e => e.status === 'Activo' && (schedule[e.id]?.[selectedConsultDay] || 'TM') === 'TC').length === 0 && (
+                      <div className="no-members">Sin empleados asignados a este turno</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* TURNO MAÑANA */}
+                <div className="shift-group-card tm">
+                  <div className="group-card-header">
+                    <span className="badge-title tm">TURNO MAÑANA</span>
+                    <span className="group-hours">09:00 AM - 06:00 PM</span>
+                  </div>
+                  <div className="group-members-list">
+                    {employees.filter(e => e.status === 'Activo' && (schedule[e.id]?.[selectedConsultDay] || 'TM') === 'TM').map(emp => (
+                      <div key={emp.id} className="member-row">
+                        <span className="member-name">{emp.name}</span>
+                        <span className="member-code">{emp.cashierCode}</span>
+                      </div>
+                    ))}
+                    {employees.filter(e => e.status === 'Activo' && (schedule[e.id]?.[selectedConsultDay] || 'TM') === 'TM').length === 0 && (
+                      <div className="no-members">Sin empleados asignados a este turno</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* TURNO TARDE */}
+                <div className="shift-group-card tt">
+                  <div className="group-card-header">
+                    <span className="badge-title tt">TURNO TARDE</span>
+                    <span className="group-hours">{selectedConsultDay === 'Domingo' ? '12:00 PM - 08:00 PM' : '01:00 PM - 09:00 PM'}</span>
+                  </div>
+                  <div className="group-members-list">
+                    {employees.filter(e => e.status === 'Activo' && (schedule[e.id]?.[selectedConsultDay] || 'TM') === 'TT').map(emp => (
+                      <div key={emp.id} className="member-row">
+                        <span className="member-name">{emp.name}</span>
+                        <span className="member-code">{emp.cashierCode}</span>
+                      </div>
+                    ))}
+                    {employees.filter(e => e.status === 'Activo' && (schedule[e.id]?.[selectedConsultDay] || 'TM') === 'TT').length === 0 && (
+                      <div className="no-members">Sin empleados asignados a este turno</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* DÍA LIBRE / DESCANSO */}
+                <div className="shift-group-card lib">
+                  <div className="group-card-header">
+                    <span className="badge-title lib">DESCANSO / DÍA LIBRE</span>
+                    <span className="group-hours">Descanso Semanal</span>
+                  </div>
+                  <div className="group-members-list">
+                    {employees.filter(e => e.status === 'Activo' && (schedule[e.id]?.[selectedConsultDay] || 'TM') === 'LIB').map(emp => (
+                      <div key={emp.id} className="member-row">
+                        <span className="member-name">{emp.name}</span>
+                        <span className="member-code">{emp.cashierCode}</span>
+                      </div>
+                    ))}
+                    {employees.filter(e => e.status === 'Activo' && (schedule[e.id]?.[selectedConsultDay] || 'TM') === 'LIB').length === 0 && (
+                      <div className="no-members">Sin descansos programados para este día</div>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* ================= MODAL CREAR / EDITAR EMPLEADO (RESPONSIVO MEJORADO) ================= */}
       {showEmployeeModal && (
         <div className="modal-overlay" onClick={() => setShowEmployeeModal(false)}>
           <div className="modal-content employee-modal" onClick={(e) => e.stopPropagation()}>
@@ -524,7 +765,7 @@ export default function EmployeeManagement() {
                 </div>
               )}
 
-              <div className="form-grid">
+              <div className="form-grid-responsive">
                 
                 {/* Nombre */}
                 <div className="form-group">
@@ -635,7 +876,7 @@ export default function EmployeeManagement() {
 
               </div>
 
-              <div className="modal-actions">
+              <div className="modal-actions-responsive">
                 <button
                   type="button"
                   className="btn btn-secondary"
