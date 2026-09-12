@@ -2823,3 +2823,357 @@ input:checked + .slider:before {
   gap: 0.5rem;
 }
 
+/* RESPONSIVE MODAL EMPLEADOS */
+.employee-modal {
+  max-width: 620px !important;
+  width: 95% !important;
+  max-height: 88vh;
+  overflow-y: auto;
+  border-radius: 20px;
+  background: #0f172a;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(56, 189, 248, 0.15);
+}
+
+.form-grid-responsive {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.modal-actions-responsive {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 640px) {
+  .form-grid-responsive {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+
+  .modal-actions-responsive {
+    flex-direction: column-reverse;
+  }
+
+  .modal-actions-responsive .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* -------------------------------------------------------------
+   SECCIÓN: TURNOS ASIGNADOS STYLES
+   ------------------------------------------------------------- */
+.assigned-shifts-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.assigned-header-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 1.25rem 1.5rem;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.day-selector-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.selector-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.days-pill-row {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.day-pill-btn {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--color-text-secondary);
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.day-pill-btn:hover {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--color-text-primary);
+}
+
+.day-pill-btn.active {
+  background: var(--color-primary);
+  color: #0f172a;
+  border-color: var(--color-primary);
+  font-weight: 800;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+}
+
+.store-hours-info-badge {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fde047;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  font-size: 0.83rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* OPERARIO SHIFT CARD */
+.operario-shift-view {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.operario-shift-card {
+  width: 100%;
+  max-width: 720px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.8));
+  border: 1.5px solid rgba(56, 189, 248, 0.3);
+  border-radius: 24px;
+  padding: 2rem;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 25px rgba(56, 189, 248, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.operario-shift-card.is-rest {
+  border-color: rgba(148, 163, 184, 0.3);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.shift-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 1.25rem;
+}
+
+.emp-profile-pill {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.emp-profile-pill h3 {
+  font-size: 1.25rem;
+  color: var(--color-text-primary);
+  margin-bottom: 0.15rem;
+}
+
+.emp-profile-pill span {
+  font-size: 0.83rem;
+  color: var(--color-text-secondary);
+}
+
+.status-badge-large {
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0.4rem 1rem;
+  border-radius: 12px;
+  letter-spacing: 0.03em;
+}
+
+.status-badge-large.tc { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); }
+.status-badge-large.tm { background: rgba(56, 189, 248, 0.2); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.4); }
+.status-badge-large.tt { background: rgba(245, 158, 11, 0.2); color: #fde047; border: 1px solid rgba(245, 158, 11, 0.4); }
+.status-badge-large.lib { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4); }
+
+.shift-card-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25rem;
+}
+
+.shift-detail-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.detail-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.detail-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.detail-value-highlight {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--color-accent);
+}
+
+.time-badge-box {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--color-primary);
+  padding: 0.5rem 0.85rem;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+}
+
+.shift-card-footer {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0.85rem 1.25rem;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* ADMIN SHIFT SUMMARY */
+.admin-shift-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.summary-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.summary-title-row h3 {
+  font-size: 1.2rem;
+  color: var(--color-text-primary);
+}
+
+.summary-count {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.shifts-groups-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+.shift-group-card {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.shift-group-card.tc { border-color: rgba(16, 185, 129, 0.3); }
+.shift-group-card.tm { border-color: rgba(56, 189, 248, 0.3); }
+.shift-group-card.tt { border-color: rgba(245, 158, 11, 0.3); }
+.shift-group-card.lib { border-color: rgba(148, 163, 184, 0.2); }
+
+.group-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 0.75rem;
+}
+
+.badge-title {
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+}
+
+.badge-title.tc { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+.badge-title.tm { background: rgba(56, 189, 248, 0.2); color: #7dd3fc; }
+.badge-title.tt { background: rgba(245, 158, 11, 0.2); color: #fde047; }
+.badge-title.lib { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+
+.group-hours {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.group-members-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.member-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 0.5rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.member-name {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.member-code {
+  font-size: 0.75rem;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.no-members {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+  padding: 0.5rem 0;
+  text-align: center;
+}
+
+
