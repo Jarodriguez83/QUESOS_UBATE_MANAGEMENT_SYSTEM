@@ -32,7 +32,8 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   LogOut,
-  UserCheck
+  UserCheck,
+  Menu
 } from 'lucide-react';
 import { speechQueue } from './SpeechSynthesisQueue';
 import LoginScreen from './components/LoginScreen';
@@ -53,6 +54,29 @@ function App() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
+  // Definición central del menú de navegación. Los items marcados como
+  // "adminOnly" quedan ocultos para el rol Operario, para que el cajero
+  // solo vea lo que necesita en el día a día (POS, Inventario y su turno).
+  // Si un operario sube a Admin con el PIN, el menú completo aparece.
+  const navItems = [
+    { key: 'pos', label: 'POS Caja', icon: ShoppingCart, adminOnly: false },
+    { key: 'inventory', label: 'Inventario', icon: Package, adminOnly: false },
+    { key: 'employees', label: role === 'ADMIN' ? 'Empleados & Turnos' : 'Mi Turno', icon: UserCheck, adminOnly: false },
+    { key: 'suppliers', label: 'Proveedores y Entradas', icon: Users, adminOnly: true },
+    { key: 'reports', label: 'Reportes Ventas', icon: TrendingUp, adminOnly: true },
+    { key: 'dashboard', label: 'Escáner Gmail', icon: Activity, adminOnly: true },
+    { key: 'settings', label: 'Config Gmail', icon: Settings, adminOnly: true },
+    { key: 'logs', label: 'Auditoría', icon: Terminal, adminOnly: true },
+  ];
+  const visibleNavItems = navItems.filter(item => !item.adminOnly || role === 'ADMIN');
+
+  const handleNavSelect = (tabKey) => {
+    setActiveTab(tabKey);
+    if (tabKey === 'logs') fetchLogs();
+    setIsMobileNavOpen(false);
+  };
 
   const handleLogin = (userSession) => {
     setCurrentUser(userSession);
@@ -208,6 +232,21 @@ function App() {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
   }, [selectedVoice]);
+
+  // Bloquear el scroll del fondo mientras el menú móvil está abierto
+  useEffect(() => {
+    document.body.style.overflow = isMobileNavOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [isMobileNavOpen]);
+
+  // Cerrar el menú móvil automáticamente si la pantalla crece a tamaño de escritorio
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 1180) setIsMobileNavOpen(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Sync data on tab change
   useEffect(() => {
@@ -763,85 +802,88 @@ function App() {
          HEADER
          ------------------------------------------------------------- */}
       <header className="main-header">
-        <div className="brand">
-          <span className="brand-logo">🧀</span>
-          <div className="brand-title">
-            QUESOS UBATE
-            <span className="brand-subtitle">POS & Caja Automatizada</span>
+        <div className="header-row">
+          <div className="brand">
+            <span className="brand-logo">🧀</span>
+            <div className="brand-title">
+              QUESOS UBATE
+              <span className="brand-subtitle">POS &amp; Caja Automatizada</span>
+            </div>
+          </div>
+
+          {/* Navigation Tabs — escritorio/tablet ancho */}
+          <nav className="nav-menu" aria-label="Navegación principal">
+            {visibleNavItems.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                className={`nav-item ${activeTab === key ? 'active' : ''}`}
+                onClick={() => handleNavSelect(key)}
+              >
+                <Icon size={18} />
+                {label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="header-actions">
+            <div className="system-status" title={`Gmail: ${gmailConnected ? 'Verificando' : (gmailConfigured ? 'Requiere Token' : 'Sin Configurar')}`}>
+              <span className={`status-dot ${gmailConnected ? 'online' : (gmailConfigured ? 'configuring' : 'offline')}`}></span>
+              <span className="system-status-label">Gmail: {gmailConnected ? 'Verificando' : (gmailConfigured ? 'Requiere Token' : 'Sin Configurar')}</span>
+            </div>
+
+            <div className="user-session-pill">
+              <User size={14} className="text-sky-400" />
+              <span className="session-code">{currentUser?.cashierCode || 'CAJERO'}</span>
+
+              <button
+                className={`role-badge ${role === 'ADMIN' ? 'admin' : 'operator'}`}
+                onClick={toggleRole}
+                title="Cambiar rol (requiere PIN)"
+              >
+                <Shield size={13} />
+                {role === 'ADMIN' ? 'Admin' : 'Operario'}
+              </button>
+
+              <button
+                className="btn-logout"
+                onClick={handleLogout}
+                title="Cerrar sesión del sistema"
+              >
+                <LogOut size={13} />
+                <span>Salir</span>
+              </button>
+            </div>
+
+            {/* Botón hamburguesa — solo visible en celular/tablet */}
+            <button
+              className="menu-toggle"
+              onClick={() => setIsMobileNavOpen(true)}
+              aria-label="Abrir menú de navegación"
+              aria-expanded={isMobileNavOpen}
+            >
+              <Menu size={22} />
+            </button>
           </div>
         </div>
+      </header>
 
-        {/* Navigation Tabs */}
-        <nav className="nav-menu">
-          <button 
-            className={`nav-item ${activeTab === 'pos' ? 'active' : ''}`}
-            onClick={() => setActiveTab('pos')}
-          >
-            <ShoppingCart size={18} />
-            POS Caja
-          </button>
-          <button 
-            className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
-            onClick={() => setActiveTab('inventory')}
-          >
-            <Package size={18} />
-            Inventario
-          </button>
-          <button 
-            className={`nav-item ${activeTab === 'suppliers' ? 'active' : ''}`}
-            onClick={() => setActiveTab('suppliers')}
-          >
-            <Users size={18} />
-            Proveedores y Entradas
-          </button>
-          <button 
-            className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`}
-            onClick={() => setActiveTab('reports')}
-          >
-            <TrendingUp size={18} />
-            Reportes Ventas
-          </button>
-          <button 
-            className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
-          >
-            <Activity size={18} />
-            Escáner Gmail
-          </button>
-          <button 
-            className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            <Settings size={18} />
-            Config Gmail
-          </button>
-          <button 
-            className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('logs'); fetchLogs(); }}
-          >
-            <Terminal size={18} />
-            Auditoría
-          </button>
-          <button 
-            className={`nav-item ${activeTab === 'employees' ? 'active' : ''}`}
-            onClick={() => setActiveTab('employees')}
-          >
-            <UserCheck size={18} />
-            {role === 'ADMIN' ? 'Empleados & Turnos' : 'Turnos Asignados'}
-          </button>
-        </nav>
-
-        <div className="header-actions">
-          <div className="system-status">
-            <span className={`status-dot ${gmailConnected ? 'online' : (gmailConfigured ? 'configuring' : 'offline')}`}></span>
-            <span>Gmail: {gmailConnected ? 'Verificando' : (gmailConfigured ? 'Requiere Token' : 'Sin Configurar')}</span>
+      {/* Menú móvil tipo panel lateral (drawer) */}
+      <div className={`nav-overlay ${isMobileNavOpen ? 'open' : ''}`} onClick={() => setIsMobileNavOpen(false)} />
+      <aside className={`mobile-drawer ${isMobileNavOpen ? 'open' : ''}`} aria-hidden={!isMobileNavOpen}>
+        <div className="mobile-drawer-header">
+          <div className="brand">
+            <span className="brand-logo">🧀</span>
+            <div className="brand-title" style={{ fontSize: '1.1rem' }}>QUESOS UBATE</div>
           </div>
-          
-          <div className="user-session-pill">
-            <User size={14} className="text-sky-400" />
-            <span className="session-code">{currentUser?.cashierCode || 'CAJERO'}</span>
-            
-            <button 
+          <button className="drawer-close-btn" onClick={() => setIsMobileNavOpen(false)} aria-label="Cerrar menú">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="mobile-drawer-user">
+          <div className="user-session-pill" style={{ width: '100%', justifyContent: 'space-between' }}>
+            <span className="session-code"><User size={14} /> {currentUser?.cashierCode || 'CAJERO'}</span>
+            <button
               className={`role-badge ${role === 'ADMIN' ? 'admin' : 'operator'}`}
               onClick={toggleRole}
               title="Cambiar rol (requiere PIN)"
@@ -849,18 +891,31 @@ function App() {
               <Shield size={13} />
               {role === 'ADMIN' ? 'Admin' : 'Operario'}
             </button>
-
-            <button 
-              className="btn-logout"
-              onClick={handleLogout}
-              title="Cerrar sesión del sistema"
-            >
-              <LogOut size={13} />
-              <span>Salir</span>
-            </button>
+          </div>
+          <div className="system-status" style={{ width: '100%' }}>
+            <span className={`status-dot ${gmailConnected ? 'online' : (gmailConfigured ? 'configuring' : 'offline')}`}></span>
+            <span>Gmail: {gmailConnected ? 'Verificando' : (gmailConfigured ? 'Requiere Token' : 'Sin Configurar')}</span>
           </div>
         </div>
-      </header>
+
+        <nav className="mobile-nav-list" aria-label="Navegación principal (móvil)">
+          {visibleNavItems.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              className={`mobile-nav-item ${activeTab === key ? 'active' : ''}`}
+              onClick={() => handleNavSelect(key)}
+            >
+              <Icon size={19} />
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <button className="btn-logout mobile-logout-btn" onClick={handleLogout}>
+          <LogOut size={16} />
+          <span>Cerrar sesión</span>
+        </button>
+      </aside>
 
       {/* BANNER DE DATOS DE CAJERO, RELOJ Y CALENDARIO */}
       <CashierSessionBanner currentUser={currentUser} role={role} />
@@ -1041,7 +1096,7 @@ function App() {
             )}
 
             <div className="table-wrapper">
-              <table className="history-table">
+              <table className="history-table inventory-table">
                 <thead>
                   <tr>
                     <th>Estado</th>
@@ -1231,7 +1286,7 @@ function App() {
 
               {/* Items agregados a la compra */}
               <div className="table-wrapper" style={{ maxHeight: '180px', overflowY: 'auto', marginBottom: '1rem' }}>
-                <table className="history-table" style={{ fontSize: '0.8rem' }}>
+                <table className="history-table purchase-items-table" style={{ fontSize: '0.8rem' }}>
                   <thead>
                     <tr>
                       <th>Producto</th>
