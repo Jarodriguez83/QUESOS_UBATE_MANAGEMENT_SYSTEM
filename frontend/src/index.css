@@ -40,7 +40,22 @@
   --border-radius-sm: 8px;
   --border-radius-md: 14px;
   --border-radius-lg: 20px;
+
+  /* Layout & responsive infra */
+  --header-height: 72px;
+  --banner-height: 76px;
+  --content-padding-y: 1.5rem;
+  --z-header: 100;
+  --z-drawer: 300;
+  --z-overlay: 250;
+  --z-modal: 400;
+  --touch-target: 44px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* A partir de aquí todas las medidas táctiles respetan un mínimo de 44px
+   (recomendación WCAG / Apple HIG) para uso cómodo en celular y tablet. */
 
 /* Base resets */
 * {
@@ -102,21 +117,28 @@ a:hover {
 
 .main-header {
   backdrop-filter: blur(var(--glass-blur));
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(15, 23, 42, 0.72);
   border-bottom: 1px solid var(--border-color);
-  padding: 1rem 2rem;
+  padding: 0 clamp(1rem, 3vw, 2rem);
+  padding-top: var(--safe-top);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+}
+
+.header-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  gap: 1rem;
+  height: var(--header-height);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-shrink: 0;
 }
 
 .brand-logo {
@@ -133,6 +155,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   line-height: 1.1;
+  white-space: nowrap;
 }
 
 .brand-subtitle {
@@ -148,6 +171,7 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-shrink: 0;
 }
 
 .system-status {
@@ -167,6 +191,7 @@ a:hover {
   height: 8px;
   border-radius: 50%;
   position: relative;
+  flex-shrink: 0;
 }
 
 .status-dot.online {
@@ -195,6 +220,7 @@ a:hover {
   font-weight: 700;
   cursor: pointer;
   transition: var(--transition-fast);
+  min-height: var(--touch-target);
 }
 
 .role-badge.admin {
@@ -213,25 +239,29 @@ a:hover {
   filter: brightness(1.2);
 }
 
-/* Nav Menu */
+/* Nav Menu (escritorio / tablet ancho) */
 .nav-menu {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.85rem;
+  padding: 0.55rem 0.8rem;
   border-radius: var(--border-radius-sm);
   color: var(--color-text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   background: transparent;
   border: none;
   cursor: pointer;
   transition: var(--transition-fast);
+  white-space: nowrap;
+  min-height: var(--touch-target);
 }
 
 .nav-item:hover {
@@ -245,12 +275,194 @@ a:hover {
   border: 1px solid rgba(56, 189, 248, 0.2);
 }
 
+/* Botón hamburguesa: oculto en escritorio, aparece en pantallas angostas */
+.menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  border-radius: var(--border-radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.menu-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* -------------------------------------------------------------
+   MENÚ MÓVIL (DRAWER LATERAL)
+   Se activa por debajo de 1180px, cuando el menú horizontal ya
+   no cabe cómodamente junto al logo y las acciones de sesión.
+   ------------------------------------------------------------- */
+.nav-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 15, 0.6);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-normal);
+  z-index: var(--z-overlay);
+}
+
+.nav-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mobile-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(320px, 86vw);
+  background: #0f1626;
+  border-left: 1px solid var(--border-color);
+  box-shadow: -20px 0 40px rgba(0, 0, 0, 0.4);
+  z-index: var(--z-drawer);
+  transform: translateX(100%);
+  transition: transform var(--transition-normal);
+  display: flex;
+  flex-direction: column;
+  padding: calc(1.25rem + var(--safe-top)) 1.25rem calc(1.25rem + var(--safe-bottom));
+  gap: 1.25rem;
+  overflow-y: auto;
+}
+
+.mobile-drawer.open {
+  transform: translateX(0);
+}
+
+.mobile-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drawer-close-btn {
+  width: var(--touch-target);
+  height: var(--touch-target);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.mobile-drawer-user {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.mobile-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.mobile-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--border-radius-md);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  min-height: var(--touch-target);
+}
+
+.mobile-nav-item:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mobile-nav-item.active {
+  color: var(--color-primary);
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.25);
+}
+
+.mobile-logout-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 0.85rem;
+  min-height: var(--touch-target);
+}
+
+@media (max-width: 1180px) {
+  .nav-menu {
+    display: none;
+  }
+
+  .menu-toggle {
+    display: flex;
+  }
+
+  /* En este rango solo dejamos el estado de Gmail y la sesión visibles
+     si caben; si no, el usuario los ve completos dentro del drawer. */
+  .header-actions .user-session-pill,
+  .header-actions .system-status {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .main-header {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  :root {
+    --header-height: 64px;
+    /* En celular, el banner de cajero suele partirse en 2 líneas
+       (cajero+rol / reloj+calendario) por el flex-wrap. */
+    --banner-height: 118px;
+    --content-padding-y: 1rem;
+  }
+
+  .brand-subtitle {
+    display: none;
+  }
+
+  .brand-title {
+    font-size: 1.2rem;
+  }
+
+  .brand-logo {
+    font-size: 1.6rem;
+  }
+}
+
 .content-layout {
   flex: 1;
-  padding: 1.5rem 2rem;
+  padding: 1.5rem clamp(1rem, 3vw, 2rem);
+  padding-bottom: calc(1.5rem + var(--safe-bottom));
   max-width: 1700px;
   width: 100%;
   margin: 0 auto;
+}
+
+@media (max-width: 640px) {
+  .content-layout {
+    padding: 1rem;
+    padding-bottom: calc(1rem + var(--safe-bottom));
+  }
 }
 
 /* Cards & Buttons */
@@ -370,6 +582,15 @@ a:hover {
   background: rgba(15, 23, 42, 0.9);
 }
 
+/* En móvil, un input con font-size menor a 16px hace que iOS Safari
+   haga zoom automático al enfocarlo — molesto durante una venta rápida. */
+@media (max-width: 640px) {
+  .form-input, .form-textarea, .form-select {
+    font-size: 16px;
+    min-height: var(--touch-target);
+  }
+}
+
 .form-textarea {
   resize: vertical;
   min-height: 100px;
@@ -433,7 +654,12 @@ a:hover {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 1rem;
-  max-height: calc(100vh - 250px);
+  /* Alto disponible = viewport - header - banner de cajero - paddings del
+     content-layout - barra de categorías (~56px) - separación (~1.25rem).
+     Se usa dvh para que en móvil no se recorte al aparecer/ocultarse la
+     barra de direcciones del navegador (100vh es inestable en ese caso). */
+  max-height: calc(100vh - var(--header-height) - var(--banner-height) - (var(--content-padding-y) * 2) - 76px);
+  max-height: calc(100dvh - var(--header-height) - var(--banner-height) - (var(--content-padding-y) * 2) - 76px);
   overflow-y: auto;
   padding-right: 0.5rem;
 }
@@ -499,7 +725,21 @@ a:hover {
 .pos-sidebar {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 120px);
+  height: calc(100vh - var(--header-height) - var(--banner-height) - (var(--content-padding-y) * 2));
+  height: calc(100dvh - var(--header-height) - var(--banner-height) - (var(--content-padding-y) * 2));
+}
+
+/* En el layout apilado (<1100px) el carrito ya no necesita ocupar
+   el alto completo de la pantalla: crece con su contenido. */
+@media (max-width: 1100px) {
+  .pos-sidebar {
+    height: auto;
+    max-height: none;
+  }
+
+  .cart-items-list {
+    max-height: 45vh;
+  }
 }
 
 .cart-title {
@@ -562,14 +802,15 @@ a:hover {
   background: rgba(255, 255, 255, 0.08);
   border: none;
   color: white;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: bold;
+  flex-shrink: 0;
 }
 
 .cart-qty-btn:hover {
@@ -579,8 +820,18 @@ a:hover {
 .cart-qty-val {
   font-size: 0.85rem;
   font-weight: bold;
-  width: 24px;
+  width: 22px;
   text-align: center;
+  flex-shrink: 0;
+}
+
+/* En pantallas táctiles, +/- del carrito crecen a un tamaño cómodo
+   de presionar (el cajero los usa docenas de veces por venta). */
+@media (pointer: coarse) {
+  .cart-qty-btn {
+    width: 38px;
+    height: 38px;
+  }
 }
 
 .cart-item-subtotal {
@@ -965,6 +1216,103 @@ input:checked + .slider:before {
   background: rgba(255, 255, 255, 0.02);
 }
 
+/* -------------------------------------------------------------
+   TABLA DE INVENTARIO → TARJETAS EN MÓVIL
+   Por debajo de 760px, cada fila se convierte en una tarjeta con
+   pares etiqueta/valor, en vez de forzar scroll horizontal en una
+   tabla de 9-10 columnas (ilegible en un celular).
+   ------------------------------------------------------------- */
+@media (max-width: 760px) {
+  .table-wrapper:has(.inventory-table),
+  .employee-table-wrapper {
+    border: none;
+    overflow: visible;
+  }
+
+  .inventory-table,
+  .employee-table {
+    border: none;
+  }
+
+  .inventory-table thead,
+  .employee-table thead {
+    display: none;
+  }
+
+  .inventory-table tbody,
+  .employee-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  .inventory-table tr,
+  .employee-table tr {
+    display: block;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: 0.25rem 0.9rem;
+  }
+
+  .inventory-table td,
+  .employee-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    text-align: right;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .inventory-table td:last-child,
+  .employee-table td:last-child {
+    border-bottom: none;
+  }
+
+  .inventory-table td::before,
+  .employee-table td::before {
+    font-weight: 700;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-secondary);
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  /* Etiquetas de la tabla de inventario, en el mismo orden de columnas */
+  .inventory-table td:nth-of-type(1)::before { content: "Estado"; }
+  .inventory-table td:nth-of-type(2)::before { content: "SKU"; }
+  .inventory-table td:nth-of-type(3)::before { content: "Producto"; }
+  .inventory-table td:nth-of-type(4)::before { content: "Categoría"; }
+  .inventory-table td:nth-of-type(5)::before { content: "Existencias"; }
+  .inventory-table td:nth-of-type(6)::before { content: "Mínimo"; }
+  .inventory-table td:nth-of-type(7)::before { content: "U. Medida"; }
+  .inventory-table td:nth-of-type(8)::before { content: "Costo"; }
+  .inventory-table td:nth-of-type(9)::before { content: "Precio"; }
+  .inventory-table td:nth-of-type(10)::before { content: "Acciones"; }
+  .inventory-table td:nth-of-type(3) { text-align: right; }
+
+  /* Etiquetas de la tabla de empleados, en el mismo orden de columnas */
+  .employee-table td:nth-of-type(1)::before { content: "Empleado"; }
+  .employee-table td:nth-of-type(2)::before { content: "Cód. Cajero"; }
+  .employee-table td:nth-of-type(3)::before { content: "Documento"; }
+  .employee-table td:nth-of-type(4)::before { content: "Teléfono"; }
+  .employee-table td:nth-of-type(5)::before { content: "Rol"; }
+  .employee-table td:nth-of-type(6)::before { content: "Estado"; }
+  .employee-table td:nth-of-type(7)::before { content: "Contraseña"; }
+  .employee-table td:nth-of-type(8)::before { content: "Acciones"; }
+}
+
+/* La mini-tabla de ítems dentro del formulario de compras es pequeña
+   (5 columnas cortas) y vive dentro de un modal ya angosto: basta con
+   permitirle scroll horizontal suave sin convertirla en tarjetas. */
+.purchase-items-table {
+  min-width: 480px;
+}
+
 .table-amount {
   font-family: var(--font-display);
   font-weight: 700;
@@ -1345,7 +1693,6 @@ input:checked + .slider:before {
     background-color: var(--bg-card);
     box-shadow: var(--card-shadow);
   }
-}
 }
 
 /* -------------------------------------------------------------
@@ -2733,6 +3080,7 @@ input:checked + .slider:before {
 
 .schedule-table {
   width: 100%;
+  min-width: 760px;
   border-collapse: collapse;
   text-align: center;
   font-size: 0.85rem;
@@ -2749,6 +3097,19 @@ input:checked + .slider:before {
 .schedule-table td {
   padding: 0.75rem 0.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Columna del empleado fija: en celular el usuario desliza los días
+   horizontalmente sin perder de vista a quién le está asignando turno. */
+@media (max-width: 760px) {
+  .schedule-table th:first-child,
+  .schedule-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #101a2c;
+    box-shadow: 2px 0 6px rgba(0, 0, 0, 0.35);
+  }
 }
 
 .schedule-emp-cell {
@@ -3175,5 +3536,3 @@ input:checked + .slider:before {
   padding: 0.5rem 0;
   text-align: center;
 }
-
-
