@@ -398,7 +398,7 @@ export default function EmployeeManagement({ currentUser, role = 'ADMIN' }) {
                 {filteredEmployees.length > 0 ? (
                   filteredEmployees.map((emp) => (
                     <tr key={emp.id} className={emp.status === 'Inactivo' ? 'row-inactive' : ''}>
-                      <td>
+                      <td data-label="Empleado">
                         <div className="employee-cell-info">
                           <div className="avatar-circle">
                             {emp.name.substring(0, 2).toUpperCase()}
@@ -406,17 +406,17 @@ export default function EmployeeManagement({ currentUser, role = 'ADMIN' }) {
                           <span className="emp-name">{emp.name}</span>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="COD Cajero">
                         <span className="code-badge">{emp.cashierCode}</span>
                       </td>
-                      <td>{emp.document}</td>
-                      <td>{emp.phone}</td>
-                      <td>
+                      <td data-label="Documento">{emp.document}</td>
+                      <td data-label="Teléfono">{emp.phone}</td>
+                      <td data-label="Rol">
                         <span className={`role-tag ${emp.role === 'Administrador' ? 'admin' : 'operator'}`}>
                           {emp.role}
                         </span>
                       </td>
-                      <td>
+                      <td data-label="Estado">
                         <button
                           type="button"
                           className={`status-pill ${emp.status === 'Activo' ? 'active' : 'inactive'}`}
@@ -427,10 +427,10 @@ export default function EmployeeManagement({ currentUser, role = 'ADMIN' }) {
                           <span>{emp.status}</span>
                         </button>
                       </td>
-                      <td>
+                      <td data-label="Contraseña">
                         <code className="password-code">{emp.password}</code>
                       </td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td data-label="Acciones" className="actions-cell-mobile">
                         <div className="action-buttons-cell">
                           <button
                             type="button"
