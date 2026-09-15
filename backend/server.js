@@ -6,7 +6,8 @@ import dotenv from 'dotenv';
 import { 
   initDb, 
   query, 
-  logEvent 
+  logEvent,
+  resetAllData
 } from './db.js';
 import { 
   initGmailClient, 
@@ -112,26 +113,47 @@ function broadcastStatusUpdate(statusData) {
 // ==========================================
 
 app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Usuario y contraseña obligatorios.' });
+  const { username, cashierCode, password } = req.body;
+  const loginId = (cashierCode || username || '').trim();
+  if (!loginId || !password) {
+    return res.status(400).json({ error: 'Usuario / Código de cajero y contraseña obligatorios.' });
   }
 
   try {
-    const user = await query.get('SELECT * FROM users WHERE username = ? AND password = ?', [username, password]);
+    // Buscar usuario por username o cashierCode
+    const users = await query.all(
+      'SELECT * FROM users WHERE UPPER(username) = UPPER(?) OR UPPER(cashierCode) = UPPER(?)',
+      [loginId, loginId]
+    );
+
+    const cleanPassInput = password.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const user = users.find(u => {
+      const dbPass = (u.password || '').trim();
+      const cleanDbPass = dbPass.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      return dbPass === password.trim() || cleanDbPass === cleanPassInput;
+    });
+
     if (user) {
-      await logEvent('INFO', `Sesión iniciada correctamente: ${user.username} (${user.role})`);
+      if (user.status === 'Inactivo') {
+        return res.status(403).json({ error: 'La cuenta de este empleado se encuentra Inactiva.' });
+      }
+
+      await logEvent('INFO', `Sesión iniciada correctamente: ${user.name} (${user.cashierCode || user.username})`);
       res.json({
         success: true,
         user: {
+          id: user.id,
           username: user.username,
+          cashierCode: user.cashierCode || user.username,
           role: user.role,
-          name: user.name
+          name: user.name,
+          document: user.document,
+          phone: user.phone
         }
       });
     } else {
-      await logEvent('WARNING', `Intento fallido de inicio de sesión para el usuario: ${username}`);
-      res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
+      await logEvent('WARNING', `Intento fallido de inicio de sesión para el usuario: ${loginId}`);
+      res.status(401).json({ error: 'Código de cajero/usuario o contraseña incorrectos.' });
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -568,6 +590,21 @@ app.post('/api/suppliers', async (req, res) => {
   }
 });
 
+// Eliminar un proveedor
+app.delete('/api/suppliers/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const supplier = await query.get('SELECT name FROM suppliers WHERE id = ?', [id]);
+    if (supplier) {
+      await query.run('DELETE FROM suppliers WHERE id = ?', [id]);
+      await logEvent('INFO', `Proveedor ${supplier.name} eliminado.`);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Registrar una compra de mercancía (reabastecimiento)
 app.post('/api/purchases', async (req, res) => {
   const { supplier_id, total, items } = req.body;
@@ -707,33 +744,57 @@ app.get('/api/sales/:id', async (req, res) => {
 // Obtener todos los usuarios
 app.get('/api/users', async (req, res) => {
   try {
-    const users = await query.all('SELECT id, username, password, role, name FROM users ORDER BY name ASC');
+    const users = await query.all('SELECT id, username, password, role, name, cashierCode, document, phone, status, createdDate FROM users ORDER BY name ASC');
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Crear usuario (Trabajador o Administrador)
+// Crear o actualizar usuario (Trabajador o Administrador)
 app.post('/api/users', async (req, res) => {
-  const { username, password, role, name } = req.body;
-  if (!username || !password || !role || !name) {
-    return res.status(400).json({ error: 'Faltan campos obligatorios.' });
+  const { id, username, password, role, name, cashierCode, document, phone, status } = req.body;
+  if (!password || !role || !name) {
+    return res.status(400).json({ error: 'Faltan campos obligatorios (nombre, rol, contraseña).' });
   }
 
+  const finalUsername = (username || cashierCode || name.toLowerCase().replace(/\s+/g, '_')).trim();
+  const finalCode = (cashierCode || username || `CJ-${Math.floor(100 + Math.random() * 900)}`).trim();
+
   try {
-    // Validar nombre de usuario duplicado
-    const existing = await query.get('SELECT id FROM users WHERE username = ?', [username]);
-    if (existing) {
-      return res.status(400).json({ error: 'El nombre de usuario ya está en uso.' });
+    if (id) {
+      await query.run(`
+        UPDATE users 
+        SET username = ?, password = ?, role = ?, name = ?, cashierCode = ?, document = ?, phone = ?, status = ?
+        WHERE id = ?
+      `, [finalUsername, password, role, name, finalCode, document || '', phone || '', status || 'Activo', id]);
+      await logEvent('INFO', `Cuenta de empleado actualizada: ${name} (${finalCode})`);
+    } else {
+      const existing = await query.get('SELECT id FROM users WHERE username = ? OR cashierCode = ?', [finalUsername, finalCode]);
+      if (existing) {
+        return res.status(400).json({ error: 'El nombre de usuario o código de cajero ya existe.' });
+      }
+
+      const createdDate = new Date().toISOString().split('T')[0];
+      await query.run(`
+        INSERT INTO users (username, password, role, name, cashierCode, document, phone, status, createdDate)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [finalUsername, password, role, name, finalCode, document || '', phone || '', status || 'Activo', createdDate]);
+
+      await logEvent('INFO', `Cuenta de usuario creada: ${name} (Rol: ${role})`);
     }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-    await query.run(`
-      INSERT INTO users (username, password, role, name)
-      VALUES (?, ?, ?, ?)
-    `, [username, password, role, name]);
-
-    await logEvent('INFO', `Cuenta de usuario creada: ${username} (Rol: ${role})`);
+// Cambiar estado de usuario (Activo / Inactivo)
+app.patch('/api/users/:id/status', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  try {
+    await query.run('UPDATE users SET status = ? WHERE id = ?', [status, id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -749,7 +810,6 @@ app.delete('/api/users/:id', async (req, res) => {
       return res.status(404).json({ error: 'Usuario no encontrado.' });
     }
 
-    // Proteger cuenta administrativa por defecto
     if (user.username === 'admin_queuba') {
       return res.status(400).json({ error: 'No se puede eliminar la cuenta principal de administración.' });
     }
@@ -757,6 +817,17 @@ app.delete('/api/users/:id', async (req, res) => {
     await query.run('DELETE FROM users WHERE id = ?', [id]);
     await logEvent('INFO', `Cuenta de usuario eliminada: ${user.username}`);
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- RESETEAR / LIMPIAR BASE DE DATOS ---
+app.post('/api/reset-data', async (req, res) => {
+  const { keepCatalogs } = req.body || {};
+  try {
+    await resetAllData(keepCatalogs);
+    res.json({ success: true, message: 'Base de datos limpiada correctamente.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
