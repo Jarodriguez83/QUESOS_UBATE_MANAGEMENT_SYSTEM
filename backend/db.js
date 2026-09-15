@@ -256,14 +256,6 @@ export async function initDb() {
     console.log('Seeding default food products for Quesos Ubaté POS...');
     const sampleProducts = [
       { name: 'Queso Campesino Ubaté', sku: 'Q001', category: 'Quesos', price: 14000, cost: 9500, stock: 24, min_stock: 5, unit: 'Bloque' },
-      { name: 'Queso Doble Cream Bloque 1kg', sku: 'Q002', category: 'Quesos', price: 26000, cost: 18000, stock: 15, min_stock: 4, unit: 'Bloque' },
-      { name: 'Queso Pera Hilado', sku: 'Q003', category: 'Quesos', price: 18000, cost: 12500, stock: 10, min_stock: 3, unit: 'Kg' },
-      { name: 'Arequipe Artesanal Ubaté 500g', sku: 'D001', category: 'Dulces', price: 8500, cost: 5000, stock: 30, min_stock: 6, unit: 'Vaso' },
-      { name: 'Manjar Blanco Tradicional 250g', sku: 'D002', category: 'Dulces', price: 6000, cost: 3500, stock: 20, min_stock: 5, unit: 'Unidad' },
-      { name: 'Yogur de Fresa Litro', sku: 'L001', category: 'Lácteos', price: 9000, cost: 6000, stock: 18, min_stock: 5, unit: 'Botella' },
-      { name: 'Yogur Melocotón Litro', sku: 'L002', category: 'Lácteos', price: 9000, cost: 6000, stock: 12, min_stock: 5, unit: 'Botella' },
-      { name: 'Mantequilla de Campo 250g', sku: 'L003', category: 'Lácteos', price: 7500, cost: 5000, stock: 25, min_stock: 6, unit: 'Unidad' },
-      { name: 'Quesillo de Ubaté Hojas', sku: 'Q004', category: 'Quesos', price: 12000, cost: 8200, stock: 8, min_stock: 3, unit: 'Unidad' },
       { name: 'Colaciones de Ubaté Caja', sku: 'A001', category: 'Acompañantes', price: 10000, cost: 6500, stock: 14, min_stock: 4, unit: 'Caja' }
     ];
 
