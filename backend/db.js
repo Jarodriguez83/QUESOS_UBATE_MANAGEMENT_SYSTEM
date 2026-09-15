@@ -52,9 +52,21 @@ export async function initDb() {
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT NOT NULL,
-      name TEXT NOT NULL
+      name TEXT NOT NULL,
+      cashierCode TEXT,
+      document TEXT,
+      phone TEXT,
+      status TEXT DEFAULT 'Activo',
+      createdDate TEXT
     )
   `);
+
+  // Ensure older databases upgrade gracefully
+  try { await query.run(`ALTER TABLE users ADD COLUMN cashierCode TEXT`); } catch (e) {}
+  try { await query.run(`ALTER TABLE users ADD COLUMN document TEXT`); } catch (e) {}
+  try { await query.run(`ALTER TABLE users ADD COLUMN phone TEXT`); } catch (e) {}
+  try { await query.run(`ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'Activo'`); } catch (e) {}
+  try { await query.run(`ALTER TABLE users ADD COLUMN createdDate TEXT`); } catch (e) {}
 
   // --- GMAIL PAYMENTS MODULE TABLES ---
   await query.run(`
@@ -181,15 +193,15 @@ export async function initDb() {
     
     // Seed Admin
     await query.run(`
-      INSERT INTO users (username, password, role, name)
-      VALUES (?, ?, ?, ?)
-    `, ['admin_queuba', 'administracion', 'ADMIN', 'Administrador General']);
+      INSERT INTO users (username, password, role, name, cashierCode, document, phone, status, createdDate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, ['admin_queuba', 'ADM - 999', 'ADMIN', 'Carlos Gómez (Admin)', 'ADM-001', '80.123.456', '320 998 7766', 'Activo', new Date().toISOString().split('T')[0]]);
 
     // Seed Cashier
     await query.run(`
-      INSERT INTO users (username, password, role, name)
-      VALUES (?, ?, ?, ?)
-    `, ['caja_queuba', 'cajero', 'OPERATOR', 'Cajero Principal']);
+      INSERT INTO users (username, password, role, name, cashierCode, document, phone, status, createdDate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, ['caja_queuba', 'OPE - 123', 'OPERATOR', 'Juan Rodríguez', 'CJ-101', '1.069.452.880', '314 589 2244', 'Activo', new Date().toISOString().split('T')[0]]);
 
     console.log('Users seeded successfully.');
   }
@@ -293,6 +305,34 @@ export async function logEvent(level, message, details = null) {
   } catch (err) {
     console.error('Failed to write audit log:', err.message);
   }
+}
+
+export async function resetAllData(keepCatalogs = false) {
+  await query.run('DELETE FROM sales');
+  await query.run('DELETE FROM sale_items');
+  await query.run('DELETE FROM purchases');
+  await query.run('DELETE FROM purchase_items');
+  await query.run('DELETE FROM payments');
+  await query.run('DELETE FROM audit_logs');
+  
+  if (!keepCatalogs) {
+    await query.run('DELETE FROM products');
+    await query.run('DELETE FROM suppliers');
+  }
+
+  // Reset default admin & operator users
+  await query.run('DELETE FROM users');
+  await query.run(`
+    INSERT INTO users (username, password, role, name, cashierCode, document, phone, status, createdDate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, ['admin_queuba', 'ADM - 999', 'ADMIN', 'Carlos Gómez (Admin)', 'ADM-001', '80.123.456', '320 998 7766', 'Activo', new Date().toISOString().split('T')[0]]);
+
+  await query.run(`
+    INSERT INTO users (username, password, role, name, cashierCode, document, phone, status, createdDate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, ['caja_queuba', 'OPE - 123', 'OPERATOR', 'Juan Rodríguez', 'CJ-101', '1.069.452.880', '314 589 2244', 'Activo', new Date().toISOString().split('T')[0]]);
+
+  await logEvent('INFO', 'Base de datos limpiada completamente.');
 }
 
 export default db;
