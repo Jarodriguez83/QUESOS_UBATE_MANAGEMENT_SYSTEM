@@ -3536,3 +3536,161 @@ input:checked + .slider:before {
   padding: 0.5rem 0;
   text-align: center;
 }
+
+/* ==========================================
+   TECLADO NUMÉRICO EN PANTALLA (POS CAJA)
+   ========================================== */
+
+.pos-numpad-container {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.numpad-display-box {
+  background: #090d16;
+  border: 1.5px solid rgba(56, 189, 248, 0.3);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.numpad-display-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.numpad-input-val {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #38bdf8;
+  font-family: var(--font-display);
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+}
+
+.numpad-change-row {
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  padding-top: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.numpad-change-amount {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #10b981;
+}
+
+.numpad-change-pending {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f43f5e;
+}
+
+.numpad-quick-bills {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.numpad-bill-btn {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fde047;
+  padding: 0.5rem 0.2rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  min-height: 38px;
+}
+
+.numpad-bill-btn:hover {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: #f59e0b;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+}
+
+.numpad-bill-btn.exact {
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+}
+
+.numpad-bill-btn.exact:hover {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #38bdf8;
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);
+}
+
+.numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+
+.numpad-key {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+  font-size: 1.25rem;
+  font-weight: 700;
+  padding: 0.75rem 0.4rem;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  min-height: 48px;
+}
+
+.numpad-key:hover {
+  background: #334155;
+  border-color: #38bdf8;
+  transform: scale(1.03);
+}
+
+.numpad-key:active {
+  transform: scale(0.96);
+  background: #0ea5e9;
+  color: #fff;
+}
+
+.numpad-key.key-action {
+  background: rgba(244, 63, 94, 0.15);
+  border-color: rgba(244, 63, 94, 0.4);
+  color: #f43f5e;
+}
+
+.numpad-key.key-action:hover {
+  background: rgba(244, 63, 94, 0.3);
+}
+
+.numpad-key.key-backspace {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #f59e0b;
+}
+
+.numpad-key.key-backspace:hover {
+  background: rgba(245, 158, 11, 0.3);
+}
+
+.numpad-key.key-zero {
+  background: #1e293b;
+  font-size: 1.1rem;
+}
