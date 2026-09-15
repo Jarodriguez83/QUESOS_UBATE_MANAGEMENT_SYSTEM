@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+const API_BASE = 'http://localhost:5000/api';
 import { 
   Users, 
   UserPlus, 
@@ -72,53 +74,24 @@ export default function EmployeeManagement({ currentUser, role = 'ADMIN' }) {
   const dayNamesMap = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
   const [selectedConsultDay, setSelectedConsultDay] = useState(dayNamesMap[currentDayNameIndex] || 'Lunes');
 
-  // ESTADO DE EMPLEADOS (PRECARGADO CON DATOS DEMO)
-  const [employees, setEmployees] = useState([
-    {
-      id: 1,
-      name: 'Juan Rodríguez',
-      document: '1.069.452.880',
-      phone: '314 589 2244',
-      role: 'Cajero',
-      cashierCode: 'CJ-101',
-      password: 'OPE - 123',
-      status: 'Activo',
-      createdDate: '2026-01-15'
-    },
-    {
-      id: 2,
-      name: 'María Pérez',
-      document: '1.020.334.112',
-      phone: '310 887 4455',
-      role: 'Operario',
-      cashierCode: 'CJ-102',
-      password: 'OPE - 456',
-      status: 'Activo',
-      createdDate: '2026-02-10'
-    },
-    {
-      id: 3,
-      name: 'Carlos Gómez',
-      document: '80.123.456',
-      phone: '320 998 7766',
-      role: 'Administrador',
-      cashierCode: 'ADM-001',
-      password: 'ADM - 999',
-      status: 'Activo',
-      createdDate: '2026-01-01'
-    },
-    {
-      id: 4,
-      name: 'Laura Castañeda',
-      document: '1.075.221.890',
-      phone: '311 445 6677',
-      role: 'Cajero',
-      cashierCode: 'CJ-103',
-      password: 'OPE - 789',
-      status: 'Inactivo',
-      createdDate: '2026-03-05'
+  // ESTADO DE EMPLEADOS (SINCRONIZADO CON BACKEND DB)
+  const [employees, setEmployees] = useState([]);
+
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/users`);
+      if (res.ok) {
+        const data = await res.json();
+        setEmployees(data);
+      }
+    } catch (err) {
+      console.error('Error al cargar empleados:', err);
     }
-  ]);
+  };
+
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
 
   // ESTADO DE PROGRAMACIÓN DE TURNOS POR DÍA DE LA SEMANA
   const [schedule, setSchedule] = useState({
@@ -152,7 +125,7 @@ export default function EmployeeManagement({ currentUser, role = 'ADMIN' }) {
       document: '',
       phone: '',
       role: 'Cajero',
-      cashierCode: `CJ-10${employees.length + 1}`,
+      cashierCode: `CJ-${100 + employees.length + 1}`,
       password: 'OPE - 123',
       status: 'Activo'
     });
@@ -165,12 +138,12 @@ export default function EmployeeManagement({ currentUser, role = 'ADMIN' }) {
     setEditingEmployee(emp);
     setFormData({
       name: emp.name,
-      document: emp.document,
-      phone: emp.phone,
-      role: emp.role,
-      cashierCode: emp.cashierCode,
-      password: emp.password,
-      status: emp.status
+      document: emp.document || '',
+      phone: emp.phone || '',
+      role: emp.role || 'Cajero',
+      cashierCode: emp.cashierCode || emp.username || '',
+      password: emp.password || 'OPE - 123',
+      status: emp.status || 'Activo'
     });
     setFormError('');
     setShowEmployeeModal(true);
@@ -191,8 +164,8 @@ export default function EmployeeManagement({ currentUser, role = 'ADMIN' }) {
     setFormData({ ...formData, password: formatted });
   };
 
-  // GUARDAR EMPLEADO (CREAR O ACTUALIZAR)
-  const handleSaveEmployee = (e) => {
+  // GUARDAR EMPLEADO (CREAR O ACTUALIZAR EN DB)
+  const handleSaveEmployee = async (e) => {
     e.preventDefault();
     setFormError('');
 
@@ -205,43 +178,67 @@ export default function EmployeeManagement({ currentUser, role = 'ADMIN' }) {
       return setFormError('La contraseña debe cumplir el formato XXX - 123 (ej: OPE - 123)');
     }
 
-    if (editingEmployee) {
-      setEmployees(employees.map(emp => emp.id === editingEmployee.id ? { ...emp, ...formData } : emp));
-      triggerSuccessToast('Empleado actualizado correctamente.');
-    } else {
-      const newEmp = {
-        id: Date.now(),
-        ...formData,
-        createdDate: new Date().toISOString().split('T')[0]
+    try {
+      const payload = {
+        id: editingEmployee ? editingEmployee.id : null,
+        username: formData.cashierCode.trim(),
+        ...formData
       };
-      setEmployees([...employees, newEmp]);
-      setSchedule({
-        ...schedule,
-        [newEmp.id]: { Lunes: 'TM', Martes: 'TM', Miércoles: 'TM', Jueves: 'TM', Viernes: 'TM', Sábado: 'LIB', Domingo: 'LIB' }
+
+      const res = await fetch(`${API_BASE}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
-      triggerSuccessToast('Nuevo empleado creado exitosamente.');
-    }
+      const data = await res.json();
 
-    setShowEmployeeModal(false);
-  };
-
-  // CAMBIAR ESTADO DE EMPLEADO
-  const handleToggleStatus = (id) => {
-    setEmployees(employees.map(emp => {
-      if (emp.id === id) {
-        const newStatus = emp.status === 'Activo' ? 'Inactivo' : 'Activo';
-        return { ...emp, status: newStatus };
+      if (res.ok && data.success) {
+        triggerSuccessToast(editingEmployee ? 'Empleado actualizado correctamente.' : 'Nuevo empleado creado exitosamente.');
+        setShowEmployeeModal(false);
+        fetchEmployees();
+      } else {
+        setFormError(data.error || 'Error al guardar el empleado.');
       }
-      return emp;
-    }));
-    triggerSuccessToast('Estado del empleado actualizado.');
+    } catch (err) {
+      setFormError('Error en conexión con el servidor.');
+    }
   };
 
-  // ELIMINAR EMPLEADO
-  const handleDeleteEmployee = (id) => {
+  // CAMBIAR ESTADO DE EMPLEADO (EN DB)
+  const handleToggleStatus = async (id) => {
+    const emp = employees.find(e => e.id === id);
+    if (!emp) return;
+    const newStatus = emp.status === 'Activo' ? 'Inactivo' : 'Activo';
+    try {
+      const res = await fetch(`${API_BASE}/users/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        triggerSuccessToast(`Estado de ${emp.name} cambiado a ${newStatus}.`);
+        fetchEmployees();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // ELIMINAR EMPLEADO (EN DB)
+  const handleDeleteEmployee = async (id) => {
     if (window.confirm('¿Estás seguro de eliminar este empleado del registro?')) {
-      setEmployees(employees.filter(emp => emp.id !== id));
-      triggerSuccessToast('Empleado eliminado del sistema.');
+      try {
+        const res = await fetch(`${API_BASE}/users/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          triggerSuccessToast('Empleado eliminado del sistema.');
+          fetchEmployees();
+        } else {
+          alert(`Error: ${data.error || 'No se pudo eliminar el empleado.'}`);
+        }
+      } catch (err) {
+        console.error(err);
+      }
     }
   };
 
