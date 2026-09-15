@@ -598,8 +598,96 @@ function App() {
   };
 
   // -------------------------------------------------------------
+  // POS NUMPAD KEYPAD LOGIC (TECLADO EN PANTALLA)
+  // -------------------------------------------------------------
+  const handleNumpadPress = (val) => {
+    setCheckoutForm(prev => {
+      let current = prev.cashReceived || '';
+      if (val === 'C') {
+        current = '';
+      } else if (val === 'BACK') {
+        current = current.slice(0, -1);
+      } else if (val === 'EXACT') {
+        current = cartTotal.toString();
+      } else {
+        if (current === '0') current = val;
+        else current = current + val;
+      }
+      return { ...prev, cashReceived: current };
+    });
+  };
+
+  const handleQuickBill = (amount) => {
+    setCheckoutForm(prev => {
+      let current = parseFloat(prev.cashReceived) || 0;
+      let nextVal = current + amount;
+      return { ...prev, cashReceived: nextVal.toString() };
+    });
+  };
+
+  // -------------------------------------------------------------
   // SUPPLIER & COMPRAS LOGIC (REABASTECIMIENTO)
   // -------------------------------------------------------------
+  const openSupplierForm = (sup = null) => {
+    if (sup) {
+      setSupplierForm({
+        id: sup.id,
+        name: sup.name,
+        nit: sup.nit || '',
+        phone: sup.phone || '',
+        email: sup.email || '',
+        contact_name: sup.contact_name || ''
+      });
+    } else {
+      setSupplierForm({ id: null, name: '', nit: '', phone: '', email: '', contact_name: '' });
+    }
+    setShowSupplierModal(true);
+  };
+
+  const handleDeleteSupplier = async (id) => {
+    if (role !== 'ADMIN') return alert('Acceso denegado. Solo administradores pueden eliminar proveedores.');
+    if (!window.confirm('¿Está seguro de eliminar este proveedor del catálogo?')) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/suppliers/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchSuppliers();
+        alert('Proveedor eliminado correctamente');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleResetDatabase = async (keepCatalogs = false) => {
+    if (role !== 'ADMIN') return alert('Solo administradores pueden limpiar la base de datos.');
+    const msg = keepCatalogs 
+      ? '¿Desea limpiar todas las ventas, compras, pagos escaneados de Gmail y logs de auditoría?' 
+      : '¿Desea LIMPIAR ABSOLUTAMENTE TODOS LOS DATOS (ventas, compras, pagos, productos y proveedores)?';
+    
+    if (!window.confirm(msg)) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/reset-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keepCatalogs })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert('¡Base de datos limpiada exitosamente!');
+        fetchProducts();
+        fetchSuppliers();
+        fetchLogs();
+      } else {
+        alert(`Error al limpiar: ${data.error}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error en conexión al intentar limpiar la base de datos.');
+    }
+  };
+
   const handleSaveSupplier = async (e) => {
     e.preventDefault();
     try {
@@ -1175,19 +1263,40 @@ function App() {
                     <Users size={18} className="color-primary" />
                     Proveedores Registrados
                   </h3>
-                  <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => setShowSupplierModal(true)}>
+                  <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => openSupplierForm(null)}>
                     <Plus size={12} /> Proveedor
                   </button>
                 </div>
 
                 <div className="parsers-list" style={{ maxHeight: 'calc(100vh - 350px)', overflowY: 'auto' }}>
                   {suppliers.map(s => (
-                    <div key={s.id} className="glass-card parser-item-card" style={{ cursor: 'default' }}>
+                    <div key={s.id} className="glass-card parser-item-card" style={{ cursor: 'default', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div className="parser-item-info">
                         <div className="parser-item-name">{s.name}</div>
-                        <div className="parser-item-email">NIT: {s.nit || 'Sin Nit'} | Tel: {s.phone}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)' }}>Contacto: {s.contact_name}</div>
+                        <div className="parser-item-email">NIT: {s.nit || 'Sin Nit'} | Tel: {s.phone || 'N/A'}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Contacto: {s.contact_name || 'N/A'} {s.email ? `(${s.email})` : ''}</div>
                       </div>
+                      
+                      {role === 'ADMIN' && (
+                        <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                          <button 
+                            className="btn btn-secondary btn-icon-only" 
+                            onClick={() => openSupplierForm(s)} 
+                            title="Editar Proveedor"
+                            style={{ padding: '0.35rem 0.6rem' }}
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button 
+                            className="btn btn-danger btn-icon-only" 
+                            onClick={() => handleDeleteSupplier(s.id)} 
+                            title="Eliminar Proveedor"
+                            style={{ padding: '0.35rem 0.6rem' }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1834,6 +1943,37 @@ function App() {
                     <Save size={16} /> Guardar Credenciales
                   </button>
                 </form>
+
+                {/* Sección Mantenimiento y Limpieza de Datos */}
+                <div style={{ marginTop: '2.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <Trash2 size={18} />
+                    Mantenimiento y Limpieza de Base de Datos
+                  </h3>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '1.25rem' }}>
+                    Permite restablecer la base de datos eliminando registros de prueba, ventas, compras y notificaciones.
+                  </p>
+
+                  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                    <button 
+                      type="button" 
+                      className="btn btn-danger" 
+                      onClick={() => handleResetDatabase(false)}
+                      style={{ padding: '0.65rem 1.25rem', fontSize: '0.85rem' }}
+                    >
+                      <Trash2 size={16} /> Limpiar TODO (Base de Datos 100% Limpia)
+                    </button>
+                    
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      onClick={() => handleResetDatabase(true)}
+                      style={{ padding: '0.65rem 1.25rem', fontSize: '0.85rem', background: '#334155' }}
+                    >
+                      <RefreshCw size={16} /> Limpiar Solo Ventas y Pagos (Mantener Catálogos)
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1963,31 +2103,77 @@ function App() {
                 </select>
               </div>
 
-              {/* Panel de Efectivo (Vueltas) */}
+              {/* Panel de Efectivo con Teclado Numérico en Pantalla 100% Funcional */}
               {checkoutForm.payment_method === 'Efectivo' && (
-                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                    <span>Total Compra:</span>
-                    <strong style={{ color: 'var(--color-success)' }}>{formatCOP(cartTotal)}</strong>
-                  </div>
-                  
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Monto Recibido</label>
-                    <input 
-                      type="number"
-                      className="form-input"
-                      value={checkoutForm.cashReceived}
-                      onChange={(e) => setCheckoutForm({...checkoutForm, cashReceived: e.target.value})}
-                      placeholder="Ej. 50000"
-                    />
+                <div className="pos-numpad-container">
+                  {/* Visor de Pantalla (Display) */}
+                  <div className="numpad-display-box">
+                    <div className="numpad-display-row">
+                      <span>Total de la Compra:</span>
+                      <span style={{ color: 'var(--color-accent)', fontWeight: 'bold' }}>{formatCOP(cartTotal)}</span>
+                    </div>
+
+                    <div className="numpad-display-row">
+                      <span>Efectivo Recibido:</span>
+                      <span className="numpad-input-val">
+                        {checkoutForm.cashReceived ? formatCOP(parseFloat(checkoutForm.cashReceived)) : '$0'}
+                      </span>
+                    </div>
+
+                    <div className="numpad-display-row numpad-change-row">
+                      <span>Cambio / Vueltas:</span>
+                      {(() => {
+                        const rec = parseFloat(checkoutForm.cashReceived) || 0;
+                        const change = rec - cartTotal;
+                        if (!checkoutForm.cashReceived || rec === 0) {
+                          return <span style={{ color: 'var(--color-text-muted)' }}>Digite el monto cobrado</span>;
+                        }
+                        if (change >= 0) {
+                          return <span className="numpad-change-amount">✓ {formatCOP(change)}</span>;
+                        } else {
+                          return <span className="numpad-change-pending">Faltan {formatCOP(Math.abs(change))}</span>;
+                        }
+                      })()}
+                    </div>
                   </div>
 
-                  {checkoutForm.cashReceived && parseFloat(checkoutForm.cashReceived) >= cartTotal && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.75rem', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                      <span>Cambio a devolver:</span>
-                      <span style={{ color: 'var(--color-primary)' }}>{formatCOP(parseFloat(checkoutForm.cashReceived) - cartTotal)}</span>
-                    </div>
-                  )}
+                  {/* Billetes Rápido */}
+                  <div className="numpad-quick-bills">
+                    <button type="button" className="numpad-bill-btn" onClick={() => handleQuickBill(10000)}>+$10.000</button>
+                    <button type="button" className="numpad-bill-btn" onClick={() => handleQuickBill(20000)}>+$20.000</button>
+                    <button type="button" className="numpad-bill-btn" onClick={() => handleQuickBill(50000)}>+$50.000</button>
+                    <button type="button" className="numpad-bill-btn" onClick={() => handleQuickBill(100000)}>+$100.000</button>
+                    <button type="button" className="numpad-bill-btn exact" onClick={() => handleNumpadPress('EXACT')}>Exacto</button>
+                  </div>
+
+                  {/* Teclado Numérico en Grilla */}
+                  <div className="numpad-grid">
+                    <button type="button" className="numpad-key" onClick={() => handleNumpadPress('7')}>7</button>
+                    <button type="button" className="numpad-key" onClick={() => handleNumpadPress('8')}>8</button>
+                    <button type="button" className="numpad-key" onClick={() => handleNumpadPress('9')}>9</button>
+                    <button type="button" className="numpad-key key-backspace" onClick={() => handleNumpadPress('BACK')}>⌫</button>
+
+                    <button type="button" className="numpad-key" onClick={() => handleNumpadPress('4')}>4</button>
+                    <button type="button" className="numpad-key" onClick={() => handleNumpadPress('5')}>5</button>
+                    <button type="button" className="numpad-key" onClick={() => handleNumpadPress('6')}>6</button>
+                    <button type="button" className="numpad-key key-action" onClick={() => handleNumpadPress('C')}>C</button>
+
+                    <button type="button" className="numpad-key" onClick={() => handleNumpadPress('1')}>1</button>
+                    <button type="button" className="numpad-key" onClick={() => handleNumpadPress('2')}>2</button>
+                    <button type="button" className="numpad-key" onClick={() => handleNumpadPress('3')}>3</button>
+                    <button type="button" className="numpad-key key-zero" onClick={() => handleNumpadPress('00')}>00</button>
+
+                    <button type="button" className="numpad-key" onClick={() => handleNumpadPress('0')}>0</button>
+                    <button type="button" className="numpad-key key-zero" onClick={() => handleNumpadPress('000')}>.000</button>
+                    <button 
+                      type="button" 
+                      className="numpad-key" 
+                      style={{ gridColumn: 'span 2', background: 'var(--color-primary)', color: '#0f172a', fontWeight: '800', fontSize: '0.9rem' }} 
+                      onClick={() => handleNumpadPress('EXACT')}
+                    >
+                      Pagar Exacto
+                    </button>
+                  </div>
                 </div>
               )}
 
