@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Resumen · Quesos Ubaté{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">VISTA ADMINISTRATIVA</p><h1>Resumen del negocio</h1><p class="muted">Indicadores generales de ventas e inventario.</p></div></div>
+<div class="stats-grid"><article class="panel stat-card"><span>Ventas acumuladas</span><strong>${{ '{:,.0f}'.format(stats.total).replace(',', '.') }}</strong><small>Valor registrado</small></article><article class="panel stat-card"><span>Facturas</span><strong>{{ stats.count }}</strong><small>Ventas realizadas</small></article><article class="panel stat-card"><span>Inventario bajo</span><strong>{{ low_stock }}</strong><small>Productos por reponer</small></article></div>
+<section class="panel recent-panel"><div class="panel-heading"><div><h2>Últimas facturas</h2><p>Actividad reciente de caja</p></div><a class="text-button" href="/pos">Abrir caja →</a></div><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th>Pago</th><th class="align-right">Total</th></tr></thead><tbody>{% for sale in sales %}<tr><td><strong>{{ sale.invoice_number }}</strong></td><td>{{ sale.client_name }}</td><td>{{ sale.created_at[:10] }}</td><td>{{ sale.payment_method }}</td><td class="align-right">${{ '{:,.0f}'.format(sale.total).replace(',', '.') }}</td></tr>{% else %}<tr><td colspan="5" class="empty-state">Aún no hay ventas.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

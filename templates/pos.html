@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Caja · Quesos Ubaté{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">PUNTO DE VENTA</p><h1>Venta de mostrador</h1><p class="muted">Selecciona productos para agregarlos al carrito.</p></div><span class="live-pill"><i></i> Caja activa</span></div>
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+<div class="pos-layout">
+  <section class="panel catalog-panel"><div class="panel-heading"><div><h2>Productos</h2><p>Productos disponibles para la venta</p></div><label class="search"><span>⌕</span><input id="product-search" placeholder="Buscar producto" aria-label="Buscar producto"></label></div>
+    <div class="product-grid" id="product-grid">
+      {% for product in products %}
+      <button class="product-card" type="button" data-product-id="{{ product.id }}" data-name="{{ product.name }}" data-category="{{ product.category or 'Otros' }}" data-price="{{ product.price }}" data-stock="{{ product.stock }}">
+        <span class="product-category">{{ product.category or 'Otros' }}</span><strong>{{ product.name }}</strong><span class="product-stock">{{ product.stock|int if product.stock == product.stock|int else product.stock }} {{ product.unit or 'Unidad' }} disponibles</span><span class="product-price" data-cop="{{ product.price }}">${{ '{:,.0f}'.format(product.price).replace(',', '.') }}</span>
+      </button>
+      {% else %}<div class="empty-state">No hay productos activos. Agrégalos desde Inventario.</div>{% endfor %}
+    </div>
+  </section>
+  <aside class="panel cart-panel"><div class="panel-heading"><div><h2>Venta actual</h2><p id="cart-count">0 productos</p></div><button type="button" class="text-button" id="clear-cart">Vaciar</button></div>
+    <div id="cart-items" class="cart-items"><div class="cart-empty">Tu carrito está vacío.<br>Agrega productos para comenzar.</div></div>
+    <form action="/sales" method="post" id="checkout-form" class="checkout-form">
+      <label for="client-name">Cliente <span class="muted">(opcional)</span></label><input id="client-name" name="client_name" placeholder="Cliente General">
+      <label for="payment-method">Medio de pago</label><select id="payment-method" name="payment_method"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option><option>Nequi</option><option>Daviplata</option></select>
+      <label for="payment-reference">Referencia <span class="muted">(opcional)</span></label><input id="payment-reference" name="payment_reference" placeholder="Número de comprobante">
+      <input type="hidden" id="cart-payload" name="cart" value="[]">
+      <div class="total-row"><span>Total</span><strong id="cart-total">$0</strong></div>
+      <button class="button button-primary button-wide" id="checkout-button" type="submit" disabled>Registrar venta</button>
+    </form>
+  </aside>
+</div>
+<section class="panel recent-panel"><div class="panel-heading"><div><h2>Ventas recientes</h2><p>Últimas facturas registradas</p></div></div><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th>Medio de pago</th><th class="align-right">Total</th></tr></thead><tbody>
+{% for sale in recent_sales %}<tr><td><strong>{{ sale.invoice_number }}</strong></td><td>{{ sale.client_name }}</td><td>{{ sale.created_at[:10] }}</td><td>{{ sale.payment_method }}</td><td class="align-right">${{ '{:,.0f}'.format(sale.total).replace(',', '.') }}</td></tr>{% else %}<tr><td colspan="5" class="empty-state">Aún no hay ventas.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}
