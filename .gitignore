@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+*.py[cod]
 
 # Variables de entorno
 .env
@@ -15,6 +16,8 @@ venv/
 *.db
 *.sqlite
 *.sqlite3
+*.db-shm
+*.db-wal
 
 # VS Code
 .vscode/
