@@ -1,12 +1,14 @@
 {
   "name": "quesos-ubate-pay",
   "version": "1.0.0",
-  "description": "Digital payment verification system for Quesos Ubaté",
-  "main": "index.js",
+  "description": "Quesos Ubaté management system (FastAPI + SQLite + Jinja)",
+  "main": "app.py",
   "scripts": {
-    "install-all": "npm install && npm install --prefix backend && npm install --prefix frontend",
-    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
-    "start": "node backend/server.js"
+    "install-python": "python -m pip install -r requirements.txt",
+    "dev": "python -m uvicorn app:app --reload",
+    "start": "python -m uvicorn app:app --host 0.0.0.0 --port 8000",
+    "dev:legacy": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "start:legacy": "node backend/server.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
