@@ -1,15 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Iniciar sesión · Quesos Ubaté{% endblock %}
+{% block title %}INICIAR SESIÓN · QUESOS UBATÉ{% endblock %}
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/login.css') }}">
 <section class="login-layout">
   <div class="login-brand"><div class="brand-emblem">🧀</div><p class="eyebrow">SISTEMA DE GESTIÓN</p><h1>El sabor de Ubaté,<br><span>bien administrado.</span></h1><p>Ventas, caja e inventario en un solo lugar.</p></div>
   <form class="login-card" action="/login" method="post">
     <p class="eyebrow">BIENVENIDO DE NUEVO</p><h2>Ingresar a tu cuenta</h2><p class="muted">Usa tu código de cajero y contraseña.</p>
     {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+    <fieldset class="role-picker">
+      <legend>ELIGE TU TIPO DE ACCESO</legend>
+      <label class="role-option">
+        <input type="radio" name="access_role" value="OPERATOR" checked>
+        <span class="role-icon" aria-hidden="true">▣</span>
+        <span class="role-copy"><strong>OPERADOR</strong><small>CAJA E INVENTARIO</small></span>
+        <span class="role-check" aria-hidden="true">✓</span>
+      </label>
+      <label class="role-option">
+        <input type="radio" name="access_role" value="ADMIN">
+        <span class="role-icon" aria-hidden="true">◆</span>
+        <span class="role-copy"><strong>ADMINISTRADOR</strong><small>GESTIÓN COMPLETA</small></span>
+        <span class="role-check" aria-hidden="true">✓</span>
+      </label>
+    </fieldset>
     <label for="cashier_code">Código de cajero</label><input id="cashier_code" name="cashier_code" placeholder="Ej. CJ-101" autocomplete="username" required autofocus>
-    <label for="password">Contraseña</label><input id="password" name="password" type="password" placeholder="XXX - 123" autocomplete="current-password" required>
+    <label for="password">Contraseña</label>
+    <div class="password-field">
+      <input id="password" name="password" type="password" placeholder="XXX - 123" autocomplete="current-password" required>
+      <button class="password-toggle" type="button" aria-label="Mostrar contraseña" aria-pressed="false" aria-controls="password">
+        <svg class="eye-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+      </button>
+    </div>
     <button class="button button-primary button-wide" type="submit">Entrar <span aria-hidden="true">→</span></button>
-    <p class="login-hint">Acceso de demostración: CJ-101 / OPE - 123</p>
+    <p class="login-hint">Operador: CJ-101 / OPE - 123 · Administrador: ADMIN / ADMIN</p>
   </form>
 </section>
+<script src="{{ url_for('static', path='/js/login.js') }}" defer></script>
 {% endblock %}
