@@ -1,8 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Inventario · Quesos Ubaté{% endblock %}
+{% block title %}Productos · Quesos Ubaté{% endblock %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">CONTROL DE EXISTENCIAS</p><h1>Inventario</h1><p class="muted">Consulta productos y registra nuevos artículos.</p></div><span class="stat-chip">{{ products|length }} productos</span></div>
+<link rel="stylesheet" href="{{ url_for('static', path='/css/products.css') }}">
+<div class="page-heading">
+  <div><p class="eyebrow">CAJA · CATÁLOGO DE PRODUCTOS</p><h1>Productos</h1><p class="muted">Consulta y administra los productos disponibles para vender.</p></div>
+  <span class="stat-chip">{{ products|length }} productos activos</span>
+</div>
 {% if message %}<div class="notice">{{ message }}</div>{% endif %}
-{% if user.role == 'ADMIN' %}<section class="panel form-panel"><div class="panel-heading"><div><h2>Agregar producto</h2><p>Completa los datos para incluirlo en el catálogo de caja.</p></div></div><form class="product-form" action="/inventory" method="post"><label>Nombre<input name="name" required></label><label>SKU<input name="sku"></label><label>Categoría<input name="category" value="Quesos"></label><label>Unidad<input name="unit" value="Unidad"></label><label>Precio de venta<input name="price" type="number" min="0" step="1" required></label><label>Costo<input name="cost" type="number" min="0" step="1" required></label><label>Existencias<input name="stock" type="number" min="0" step="0.01" value="0"></label><label>Stock mínimo<input name="min_stock" type="number" min="0" step="0.01" value="2"></label><button class="button button-primary" type="submit">Guardar producto</button></form></section>{% endif %}
-<section class="panel recent-panel"><div class="table-wrap"><table><thead><tr><th>Producto</th><th>SKU</th><th>Categoría</th><th>Existencias</th><th>Precio</th><th>Estado</th></tr></thead><tbody>{% for p in products %}<tr><td><strong>{{ p.name }}</strong></td><td>{{ p.sku or '—' }}</td><td>{{ p.category or 'Otros' }}</td><td>{{ p.stock }} {{ p.unit }}</td><td>${{ '{:,.0f}'.format(p.price).replace(',', '.') }}</td><td><span class="stock-badge {% if p.stock <= p.min_stock %}stock-low{% endif %}">{% if p.stock <= p.min_stock %}Reponer{% else %}Disponible{% endif %}</span></td></tr>{% else %}<tr><td colspan="6" class="empty-state">No hay productos registrados.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel product-crud-create">
+  <div class="crud-section-title"><span class="crud-number">01</span><div><h2>CREAR PRODUCTO</h2><p>Agrega un producto nuevo al catálogo de caja.</p></div></div>
+  {% if user.role == 'ADMIN' %}<a class="button button-primary" href="/inventory/new">+ Nuevo producto</a>
+  {% else %}<p class="muted">Solo el administrador puede crear productos.</p>{% endif %}
+</section>
+<section class="panel recent-panel product-crud-read">
+  <div class="crud-section-title"><span class="crud-number">02</span><div><h2>LEER PRODUCTOS</h2><p>Catálogo de productos activos, existencias y precios.</p></div></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Producto</th><th>SKU</th><th>Categoría</th><th>Existencias</th><th>Precio</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody>{% for product in products %}
+      <tr><td><strong>{{ product.name }}</strong></td><td>{{ product.sku or '—' }}</td><td>{{ product.category or 'Otros' }}</td>
+        <td>{{ product.stock }} {{ product.unit or 'Unidad' }}</td><td>${{ '{:,.0f}'.format(product.price).replace(',', '.') }}</td>
+        <td><span class="stock-badge {% if product.stock <= product.min_stock %}stock-low{% endif %}">{% if product.stock <= product.min_stock %}Reponer{% else %}Disponible{% endif %}</span></td>
+        <td><div class="product-actions"><a class="action-link" href="/inventory/{{ product.id }}">Ver</a>
+          {% if user.role == 'ADMIN' %}<a class="action-link" href="/inventory/{{ product.id }}/edit">Editar</a>
+          <form action="/inventory/{{ product.id }}/delete" method="post" onsubmit="return confirm('¿Eliminar este producto del catálogo? El historial de ventas se conservará.');"><button class="action-link action-delete" type="submit">Eliminar</button></form>{% endif %}
+        </div></td>
+      </tr>
+    {% else %}<tr><td colspan="7" class="empty-state">No hay productos registrados.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
 {% endblock %}
