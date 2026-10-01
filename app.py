@@ -182,8 +182,41 @@ def normalize_password(value: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", value.strip().upper())
 
 
+def normalize_role(value: str | None) -> str | None:
+    role = (value or "").strip().upper()
+    if role in {"ADMIN", "ADMINISTRADOR", "ADMINISTRATOR"}:
+        return "ADMIN"
+    if role in {"OPERATOR", "OPERADOR", "CAJERO", "OPERARIO"}:
+        return "OPERATOR"
+    return None
+
+
 @app.post("/login")
-def login(request: Request, cashier_code: str = Form(...), password: str = Form(...)):
+def login(
+    request: Request,
+    cashier_code: str = Form(...),
+    password: str = Form(...),
+    access_role: str = Form("OPERATOR"),
+):
+    selected_role = normalize_role(access_role)
+    if selected_role is None:
+        return RedirectResponse("/login?error=Selecciona%20un%20tipo%20de%20acceso%20válido", status_code=303)
+    # The requested ADMIN/ADMIN credentials are accepted only in administrator mode.
+    if (
+        selected_role == "ADMIN"
+        and cashier_code.strip().upper() == "ADMIN"
+        and password.strip().upper() == "ADMIN"
+    ):
+        request.session["user"] = {
+            "id": 0, "name": "ADMINISTRADOR", "username": "ADMIN",
+            "cashierCode": "ADMIN", "role": "ADMIN",
+        }
+        with database() as db:
+            db.execute(
+                "INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                (datetime.now(timezone.utc).isoformat(), "INFO", "Inicio de sesión del administrador principal"),
+            )
+        return RedirectResponse("/dashboard", status_code=303)
     with database() as db:
         user = db.execute(
             "SELECT * FROM users WHERE UPPER(username)=UPPER(?) OR UPPER(cashierCode)=UPPER(?)",
@@ -193,9 +226,15 @@ def login(request: Request, cashier_code: str = Form(...), password: str = Form(
         return RedirectResponse("/login?error=Credenciales%20incorrectas", status_code=303)
     if user["status"] == "Inactivo":
         return RedirectResponse("/login?error=La%20cuenta%20está%20inactiva", status_code=303)
+    account_role = normalize_role(user["role"])
+    if account_role != selected_role:
+        return RedirectResponse(
+            "/login?error=El%20tipo%20de%20acceso%20no%20coincide%20con%20tu%20cuenta",
+            status_code=303,
+        )
     request.session["user"] = {
         "id": user["id"], "name": user["name"], "username": user["username"],
-        "cashierCode": user["cashierCode"], "role": user["role"],
+        "cashierCode": user["cashierCode"], "role": account_role,
     }
     with database() as db:
         db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
@@ -273,15 +312,34 @@ def inventory_page(request: Request, message: str | None = None):
     return render(request, "inventory.html", products=products, message=message)
 
 
-@app.post("/inventory")
-def save_product(request: Request, name: str = Form(...), price: float = Form(...), cost: float = Form(...),
-                 sku: str = Form(""), category: str = Form("Otros"), stock: float = Form(0),
-                 min_stock: float = Form(2), unit: str = Form("Unidad")):
+def admin_only(request: Request):
+    if not current_user(request):
+        return RedirectResponse("/login", status_code=303)
+    if current_user(request)["role"] != "ADMIN":
+        return RedirectResponse("/inventory?message=Solo%20el%20administrador%20puede%20modificar%20productos", status_code=303)
+    return None
+
+
+@app.get("/inventory/new")
+def new_product_page(request: Request):
     redirect = require_login(request)
     if redirect:
         return redirect
-    if current_user(request)["role"] != "ADMIN":
-        return RedirectResponse("/inventory?message=Acceso%20solo%20administrador", status_code=303)
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    return render(request, "product_form.html", product=None, mode="create")
+
+
+@app.post("/inventory/create")
+def create_product(request: Request, name: str = Form(...), price: float = Form(...), cost: float = Form(...),
+                   sku: str = Form(""), category: str = Form("Otros"), stock: float = Form(0),
+                   min_stock: float = Form(2), unit: str = Form("Unidad")):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    if price < 0 or cost < 0 or stock < 0 or min_stock < 0:
+        return RedirectResponse("/inventory?message=Los%20valores%20no%20pueden%20ser%20negativos", status_code=303)
     try:
         with database() as db:
             db.execute("INSERT INTO products(name,sku,category,price,cost,stock,min_stock,unit) VALUES(?,?,?,?,?,?,?,?)",
@@ -291,6 +349,70 @@ def save_product(request: Request, name: str = Form(...), price: float = Form(..
     except sqlite3.IntegrityError:
         return RedirectResponse("/inventory?message=El%20SKU%20ya%20está%20en%20uso", status_code=303)
     return RedirectResponse("/inventory?message=Producto%20guardado", status_code=303)
+
+
+@app.get("/inventory/{product_id}")
+def product_detail(request: Request, product_id: int):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        product = db.execute("SELECT * FROM products WHERE id=?", (product_id,)).fetchone()
+    if not product:
+        return RedirectResponse("/inventory?message=Producto%20no%20encontrado", status_code=303)
+    return render(request, "product_detail.html", product=product)
+
+
+@app.get("/inventory/{product_id}/edit")
+def edit_product_page(request: Request, product_id: int):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        product = db.execute("SELECT * FROM products WHERE id=? AND is_active=1", (product_id,)).fetchone()
+    if not product:
+        return RedirectResponse("/inventory?message=Producto%20no%20encontrado", status_code=303)
+    return render(request, "product_form.html", product=product, mode="edit")
+
+
+@app.post("/inventory/{product_id}/edit")
+def update_product(request: Request, product_id: int, name: str = Form(...), price: float = Form(...), cost: float = Form(...),
+                   sku: str = Form(""), category: str = Form("Otros"), stock: float = Form(0),
+                   min_stock: float = Form(2), unit: str = Form("Unidad")):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    if price < 0 or cost < 0 or stock < 0 or min_stock < 0:
+        return RedirectResponse("/inventory?message=Los%20valores%20no%20pueden%20ser%20negativos", status_code=303)
+    try:
+        with database() as db:
+            result = db.execute(
+                """UPDATE products SET name=?,sku=?,category=?,price=?,cost=?,stock=?,min_stock=?,unit=?
+                   WHERE id=? AND is_active=1""",
+                (name.strip(), sku.strip() or None, category.strip() or "Otros", price, cost, stock, min_stock,
+                 unit.strip() or "Unidad", product_id),
+            )
+            if result.rowcount == 0:
+                return RedirectResponse("/inventory?message=Producto%20no%20encontrado", status_code=303)
+            db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                       (datetime.now(timezone.utc).isoformat(), "INFO", f"Producto actualizado: {name.strip()} (ID {product_id})"))
+    except sqlite3.IntegrityError:
+        return RedirectResponse("/inventory?message=El%20SKU%20ya%20está%20en%20uso", status_code=303)
+    return RedirectResponse("/inventory?message=Producto%20actualizado", status_code=303)
+
+
+@app.post("/inventory/{product_id}/delete")
+def delete_product(request: Request, product_id: int):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        product = db.execute("SELECT name FROM products WHERE id=? AND is_active=1", (product_id,)).fetchone()
+        if product:
+            db.execute("UPDATE products SET is_active=0 WHERE id=?", (product_id,))
+            db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                       (datetime.now(timezone.utc).isoformat(), "INFO", f"Producto desactivado: {product['name']} (ID {product_id})"))
+    return RedirectResponse("/inventory?message=Producto%20eliminado%20del%20catálogo", status_code=303)
 
 
 @app.get("/dashboard")
