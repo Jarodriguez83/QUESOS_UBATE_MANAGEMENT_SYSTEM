@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Caja · Quesos Ubaté{% endblock %}
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/scanner.css') }}?v=barcode-local-1">
 <div class="page-heading"><div><p class="eyebrow">PUNTO DE VENTA</p><h1>Venta de mostrador</h1><p class="muted">Selecciona productos para agregarlos al carrito.</p></div><span class="live-pill"><i></i> Caja activa</span></div>
 {% if message %}<div class="notice">{{ message }}</div>{% endif %}
 <div class="pos-layout">
-  <section class="panel catalog-panel"><div class="panel-heading"><div><h2>Productos</h2><p>Productos disponibles para la venta</p></div><label class="search"><span>⌕</span><input id="product-search" placeholder="Buscar producto" aria-label="Buscar producto"></label></div>
+  <section class="panel catalog-panel"><div class="panel-heading"><div><h2>Productos</h2><p>Busca por nombre o escanea el código de barras</p></div><div class="catalog-tools"><label class="search"><span>⌕</span><input id="product-search" placeholder="Buscar producto o SKU" aria-label="Buscar producto o SKU"></label><button class="button button-scan" type="button" id="open-barcode-scanner"><span aria-hidden="true">▦</span> Escanear</button></div></div>
     <div class="product-grid" id="product-grid">
       {% for product in products %}
-      <button class="product-card" type="button" data-product-id="{{ product.id }}" data-name="{{ product.name }}" data-category="{{ product.category or 'Otros' }}" data-price="{{ product.price }}" data-stock="{{ product.stock }}">
+      <button class="product-card" type="button" data-product-id="{{ product.id }}" data-sku="{{ product.sku or '' }}" data-name="{{ product.name }}" data-category="{{ product.category or 'Otros' }}" data-price="{{ product.price }}" data-stock="{{ product.stock }}">
         <span class="product-category">{{ product.category or 'Otros' }}</span><strong>{{ product.name }}</strong><span class="product-stock">{{ product.stock|int if product.stock == product.stock|int else product.stock }} {{ product.unit or 'Unidad' }} disponibles</span><span class="product-price" data-cop="{{ product.price }}">${{ '{:,.0f}'.format(product.price).replace(',', '.') }}</span>
       </button>
       {% else %}<div class="empty-state">No hay productos activos. Agrégalos desde Inventario.</div>{% endfor %}
@@ -28,4 +29,15 @@
 <section class="panel recent-panel"><div class="panel-heading"><div><h2>Ventas recientes</h2><p>Últimas facturas registradas</p></div></div><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th>Medio de pago</th><th class="align-right">Total</th></tr></thead><tbody>
 {% for sale in recent_sales %}<tr><td><strong>{{ sale.invoice_number }}</strong></td><td>{{ sale.client_name }}</td><td>{{ sale.created_at[:10] }}</td><td>{{ sale.payment_method }}</td><td class="align-right">${{ '{:,.0f}'.format(sale.total).replace(',', '.') }}</td></tr>{% else %}<tr><td colspan="5" class="empty-state">Aún no hay ventas.</td></tr>{% endfor %}
 </tbody></table></div></section>
+<section class="scanner-overlay" id="barcode-panel" role="dialog" aria-modal="true" aria-labelledby="scanner-title" hidden>
+  <div class="scanner-dialog">
+    <div class="scanner-header"><div><p class="eyebrow">LECTOR DE PRODUCTOS</p><h2 id="scanner-title">Escanear código de barras</h2></div><button type="button" class="scanner-close" id="close-barcode-scanner" aria-label="Cerrar lector">×</button></div>
+    <p class="muted scanner-instructions">Enfoca el código completo con buena iluminación. Para agregarlo al carrito, el código debe estar guardado en el campo SKU del producto.</p>
+    <div id="barcode-reader" class="barcode-reader"></div>
+    <p id="scanner-status" class="scanner-status" role="status" aria-live="polite">La cámara se activará cuando pulses “Iniciar cámara”.</p>
+    <div class="scanner-controls"><button type="button" class="button button-primary" id="start-barcode-camera">Iniciar cámara</button><button type="button" class="button button-secondary" id="stop-barcode-camera" hidden>Detener cámara</button></div>
+    <form class="manual-code-form" id="manual-code-form"><label for="manual-product-code">También puedes ingresar el SKU</label><div><input id="manual-product-code" autocomplete="off" placeholder="Ej. 7701234567890"><button type="submit" class="button button-secondary">Buscar SKU</button></div></form>
+  </div>
+</section>
+<script src="{{ url_for('static', path='/js/html5-qrcode.min.js') }}?v=2.3.8" defer></script>
 {% endblock %}
