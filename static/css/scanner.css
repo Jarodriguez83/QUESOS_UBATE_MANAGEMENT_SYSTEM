@@ -1,0 +1,82 @@
+.catalog-tools {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.button-scan {
+  min-height: 39px;
+  color: #fff;
+  background: #193d30;
+  white-space: nowrap;
+}
+
+.button-scan:hover { background: #23513f; }
+.button-scan span { font-size: 17px; line-height: 1; }
+.scanner-dialog .button-secondary { color: #456253; background: #edf2ee; }
+.scanner-dialog .button-secondary:hover { background: #e2ebe4; }
+
+.scanner-overlay {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: 14px;
+  background: rgba(12, 27, 20, .68);
+  backdrop-filter: blur(3px);
+}
+
+.scanner-overlay[hidden] { display: none !important; }
+body.scanner-open { overflow: hidden; }
+
+.scanner-dialog {
+  width: min(540px, calc(100vw - 28px));
+  max-height: min(90vh, 850px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid #e3e9e3;
+  border-radius: 16px;
+  color: #21352d;
+  background: #fff;
+  box-shadow: 0 24px 80px rgba(14, 37, 27, .28);
+}
+
+.scanner-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.scanner-header h2 { margin: 5px 0 0; font: 700 19px Manrope, sans-serif; }
+.scanner-close { display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 9px; color: #53665a; background: #f1f4f1; font-size: 22px; cursor: pointer; }
+.scanner-close:hover { background: #e7eee8; }
+.scanner-instructions { margin: 9px 0 15px; }
+.barcode-reader { overflow: hidden; width: 100%; min-height: 220px; border-radius: 12px; background: #14231e; }
+.barcode-reader video { width: 100% !important; height: auto !important; max-height: 52vh; object-fit: cover; }
+.barcode-native-video { display: block; width: 100%; max-height: 52vh; object-fit: cover; }
+.barcode-reader img { max-width: 100%; }
+.barcode-reader__scan_region { min-height: 220px; }
+.scanner-status { min-height: 38px; margin: 12px 0; color: #617168; font-size: 12px; line-height: 1.5; }
+.scanner-status[data-kind="error"] { color: #a74735; }
+.scanner-status[data-kind="success"] { color: #34704b; font-weight: 700; }
+.scanner-controls { display: flex; gap: 9px; }
+.scanner-controls .button { min-height: 40px; }
+.scanner-controls .button[hidden] { display: none; }
+.manual-code-form { margin-top: 19px; padding-top: 16px; border-top: 1px solid #e9ede9; }
+.manual-code-form label { display: block; margin-bottom: 8px; color: #56675d; font-size: 11px; font-weight: 700; }
+.manual-code-form > div { display: flex; gap: 8px; }
+.manual-code-form input { min-width: 0; flex: 1; height: 40px; padding: 0 10px; border: 1px solid #e2e8e3; border-radius: 8px; outline: 0; }
+.manual-code-form input:focus { border-color: #75a88a; box-shadow: 0 0 0 3px #edf5ef; }
+.manual-code-form .button { white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .catalog-tools { width: 100%; }
+  .catalog-tools .search { min-width: 0; flex: 1; }
+  .catalog-tools .search input { width: 100%; }
+  .scanner-dialog { padding: 17px; }
+  .scanner-header h2 { font-size: 17px; }
+  .barcode-reader, .barcode-reader__scan_region { min-height: 190px; }
+}
+
+@media (max-width: 380px) {
+  .button-scan { padding-inline: 10px; font-size: 10px; }
+  .manual-code-form > div { align-items: stretch; flex-direction: column; }
+  .manual-code-form .button { width: 100%; }
+}
