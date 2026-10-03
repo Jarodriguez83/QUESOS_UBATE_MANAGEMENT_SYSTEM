@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ product.name }} · Quesos Ubaté{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/products.css') }}">
+<div class="page-heading"><div><p class="eyebrow">CAJA · PRODUCTOS · DETALLE</p><h1>{{ product.name }}</h1><p class="muted">Información del producto en el catálogo.</p></div><a class="button button-secondary" href="/inventory">Volver a productos</a></div>
+<section class="panel product-detail-panel">
+  <div class="crud-section-title"><span class="crud-number">03</span><div><h2>DETALLE DEL PRODUCTO</h2><p>Consulta de datos registrados.</p></div></div>
+  <dl class="product-detail-grid">
+    <div><dt>Nombre</dt><dd>{{ product.name }}</dd></div><div><dt>SKU</dt><dd>{{ product.sku or 'Sin código' }}</dd></div>
+    <div><dt>Categoría</dt><dd>{{ product.category or 'Otros' }}</dd></div><div><dt>Unidad</dt><dd>{{ product.unit or 'Unidad' }}</dd></div>
+    <div><dt>Precio de venta</dt><dd>${{ '{:,.0f}'.format(product.price).replace(',', '.') }}</dd></div><div><dt>Costo</dt><dd>${{ '{:,.0f}'.format(product.cost).replace(',', '.') }}</dd></div>
+    <div><dt>Existencias</dt><dd>{{ product.stock }}</dd></div><div><dt>Stock mínimo</dt><dd>{{ product.min_stock }}</dd></div>
+    <div><dt>Estado</dt><dd>{% if product.is_active %}Activo{% else %}Eliminado del catálogo{% endif %}</dd></div>
+  </dl>
+  {% if user.role == 'ADMIN' and product.is_active %}<a class="button button-primary" href="/inventory/{{ product.id }}/edit">Editar producto</a>{% endif %}
+</section>
+{% endblock %}
