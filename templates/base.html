@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#14231e">
   <title>{% block title %}Quesos Ubaté{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/workers.css') }}">
 </head>
 <body>
   {% if user %}
@@ -13,7 +14,7 @@
     <a class="brand" href="/pos"><span class="brand-mark">🧀</span><span>Quesos <strong>Ubaté</strong><small>GESTIÓN DEL NEGOCIO</small></span></a>
     <nav class="nav-links">
       <a href="/pos">Caja</a><a href="/inventory">Productos</a>
-      {% if user.role == 'ADMIN' %}<a href="/dashboard">Resumen</a>{% endif %}
+      {% if user.role == 'ADMIN' %}<a href="/dashboard">Resumen</a><a href="/workers">Trabajadores</a><a href="/workers/shifts">Turnos</a>{% endif %}
     </nav>
     <div class="user-menu"><span>{{ user.name }}<small>{{ user.role }}</small></span><form action="/logout" method="post"><button class="button button-quiet" type="submit">Salir</button></form></div>
   </header>
