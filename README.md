@@ -34,10 +34,12 @@ Las cuentas solo se agregan cuando la tabla de usuarios está vacía. La contras
 - Escaneo de códigos de barras desde la cámara de la caja, emparejando el valor leído con el SKU del producto; incluye ingreso manual de SKU.
 - Descuento de existencias, facturas `FV-xxxxx` y registro de auditoría al vender.
 - CRUD de productos desde Inventario: lectura para usuarios autenticados; creación, edición y eliminación lógica solo para administrador.
+- Panel administrativo de trabajadores: creación, edición, carga de foto, identificación, contacto, fecha de nacimiento, contrato, estado y creación de cuenta OPERATOR vinculada al trabajador. Las cuentas nuevas guardan contraseñas con PBKDF2; el inicio de sesión mantiene compatibilidad con las cuentas existentes.
+- Calendario semanal de trabajadores con los tres turnos configurados (09:00–18:00, 13:00–21:00 y 09:00–21:00), días libres y conservación del historial.
 - Consulta del resumen de ventas para el administrador.
 - Resumen de ventas para el administrador.
 - La API Express y la interfaz React anteriores siguen disponibles como `npm run dev:legacy` y `npm run start:legacy` durante la migración.
 
-La integración Gmail/OAuth, configuración de parsers, pagos en vivo, proveedores/compras, gestión de empleados/turnos, reportes completos y sus funciones de voz aún deben trasladarse. En particular, las contraseñas heredadas son texto plano; esta primera etapa las conserva para no bloquear el acceso a las cuentas existentes. Antes de desplegar en internet, configura `SESSION_SECRET` con un valor secreto propio y migra las contraseñas a hashes seguros.
+La integración Gmail/OAuth, configuración de parsers, pagos en vivo, proveedores/compras, reportes completos y sus funciones de voz aún deben trasladarse. Las cuentas heredadas pueden conservar contraseñas en texto plano; las cuentas de trabajadores nuevas usan hash PBKDF2. Antes de desplegar en internet, configura `SESSION_SECRET` con un valor secreto propio.
 
 El lector solicita permiso explícito para la cámara. Los navegadores requieren un contexto seguro: usa `localhost` durante desarrollo o HTTPS al abrir el sistema desde otro dispositivo. El decodificador se sirve como un archivo local del proyecto; si el navegador no puede leer el código, queda disponible la búsqueda manual por SKU.
