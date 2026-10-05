@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == 'create' %}Nuevo trabajador{% else %}Editar trabajador{% endif %} · Quesos Ubaté{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">GESTIÓN DEL EQUIPO</p><h1>{% if mode == 'create' %}Registrar trabajador{% else %}Editar trabajador{% endif %}</h1><p class="muted">Los campos marcados con * son obligatorios.</p></div><a class="button button-secondary" href="/workers">← Volver a trabajadores</a></div>
+<form class="panel worker-form" action="{% if mode == 'create' %}/workers/create{% else %}/workers/{{ worker.id }}/edit{% endif %}" method="post" enctype="multipart/form-data">
+<section class="worker-form-section"><h2>Datos personales</h2><div class="worker-fields">
+<label>Primer nombre *<input name="first_name" required maxlength="80" value="{{ worker.first_name if worker else '' }}"></label><label>Segundo nombre<input name="middle_name" maxlength="80" value="{{ worker.middle_name or '' if worker else '' }}"></label>
+<label>Primer apellido *<input name="last_name" required maxlength="80" value="{{ worker.last_name if worker else '' }}"></label><label>Segundo apellido<input name="second_last_name" maxlength="80" value="{{ worker.second_last_name or '' if worker else '' }}"></label>
+<label>Tipo de identificación *<select name="identification_type" required><option value="">Selecciona una opción</option>{% for kind in identification_types %}<option value="{{ kind }}" {% if worker and worker.identification_type == kind %}selected{% endif %}>{{ kind }}</option>{% endfor %}</select></label>
+<label>N.º de identificación *<input name="identification_number" required maxlength="40" value="{{ worker.identification_number if worker else '' }}"></label><label>Teléfono<input type="tel" name="phone" maxlength="30" value="{{ worker.phone or '' if worker else '' }}"></label>
+<label>Correo electrónico<input type="email" name="email" maxlength="160" value="{{ worker.email or '' if worker else '' }}"></label><label>Fecha de nacimiento *<input type="date" name="birth_date" required max="{{ today if today else '' }}" value="{{ worker.birth_date if worker else '' }}"></label>
+<label>Tipo de contrato *<select name="contract_type" required><option value="">Selecciona una opción</option>{% for kind in contract_types %}<option value="{{ kind }}" {% if worker and worker.contract_type == kind %}selected{% endif %}>{{ kind }}</option>{% endfor %}</select></label>
+<label class="photo-field">Foto de perfil <span class="muted">JPG, PNG o WEBP; máximo 3 MB.</span><input type="file" name="photo" accept="image/jpeg,image/png,image/webp">{% if worker and worker.photo %}<img class="worker-form-photo" src="{{ worker.photo }}" alt="Foto actual">{% endif %}</label>
+</div></section><div class="worker-form-actions"><a class="button button-secondary" href="/workers">Cancelar</a><button class="button button-primary" type="submit">{% if mode == 'create' %}Registrar trabajador{% else %}Guardar cambios{% endif %}</button></div></form>
+{% endblock %}
