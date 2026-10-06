@@ -31,9 +31,13 @@ Las cuentas solo se agregan cuando la tabla de usuarios está vacía. La contras
 
 - Inicio y cierre de sesión con cookie firmada y rol guardado en sesión.
 - Caja con búsqueda de productos, carrito y registro transaccional de venta.
+- Caja con secciones de productos configurables por el administrador, diálogo táctil de cobro, teclado numérico para efectivo, cálculo de cambio y recibo imprimible de 80 mm. El recibo conserva el subtotal, descuento, total, medio de pago, cajero, fecha y hora.
+- Libro de Transacciones para el administrador: ventas automáticas, salidas de proveedor y pagos, filtros, resumen de entradas/salidas, detalle en ventana, edición de salidas y anulación auditada. Anular una venta revierte existencias y la excluye de los indicadores de ventas.
+- Apartado de Proveedores con creación, consulta, edición y desactivación de empresas, productos suministrados, detalles y teléfono de contacto. Apartado Pagados para registrar pagos a un proveedor activo o pagos por otro concepto; ambos se reflejan como egresos en Transacciones.
 - Escaneo de códigos de barras desde la cámara de la caja, emparejando el valor leído con el SKU del producto; incluye ingreso manual de SKU.
 - Descuento de existencias, facturas `FV-xxxxx` y registro de auditoría al vender.
 - CRUD de productos desde Inventario: lectura para usuarios autenticados; creación, edición y eliminación lógica solo para administrador.
+- Secciones/categorías administrables para agrupar productos en Caja. Las categorías existentes se copian a la tabla de secciones al iniciar, conservando los productos.
 - Panel administrativo de trabajadores: creación, edición, carga de foto, identificación, contacto, fecha de nacimiento, contrato, estado y creación de cuenta OPERATOR vinculada al trabajador. Las cuentas nuevas guardan contraseñas con PBKDF2; el inicio de sesión mantiene compatibilidad con las cuentas existentes.
 - Calendario semanal de trabajadores con los tres turnos configurados (09:00–18:00, 13:00–21:00 y 09:00–21:00), días libres y conservación del historial.
 - Consulta del resumen de ventas para el administrador.
