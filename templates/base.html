@@ -7,6 +7,7 @@
   <title>{% block title %}Quesos Ubaté{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/css/workers.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/checkout.css') }}?v=paid-suppliers-1">
 </head>
 <body>
   {% if user %}
@@ -14,12 +15,12 @@
     <a class="brand" href="/pos"><span class="brand-mark">🧀</span><span>Quesos <strong>Ubaté</strong><small>GESTIÓN DEL NEGOCIO</small></span></a>
     <nav class="nav-links">
       <a href="/pos">Caja</a><a href="/inventory">Productos</a>
-      {% if user.role == 'ADMIN' %}<a href="/dashboard">Resumen</a><a href="/workers">Trabajadores</a><a href="/workers/shifts">Turnos</a>{% endif %}
+      {% if user.role == 'ADMIN' %}<a href="/dashboard">Resumen</a><a href="/transactions">Transacciones</a><a href="/paid">Pagados</a><a href="/suppliers">Proveedores</a><a href="/workers">Trabajadores</a><a href="/workers/shifts">Turnos</a>{% endif %}
     </nav>
     <div class="user-menu"><span>{{ user.name }}<small>{{ user.role }}</small></span><form action="/logout" method="post"><button class="button button-quiet" type="submit">Salir</button></form></div>
   </header>
   {% endif %}
   <main class="page">{% block content %}{% endblock %}</main>
-  <script src="{{ url_for('static', path='/js/app.js') }}?v=barcode-local-1" defer></script>
+  <script src="{{ url_for('static', path='/js/app.js') }}?v=transactions-1" defer></script>
 </body>
 </html>
