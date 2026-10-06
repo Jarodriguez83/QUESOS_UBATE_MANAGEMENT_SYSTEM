@@ -8,6 +8,13 @@
   const countEl = document.querySelector('#cart-count');
   const payload = document.querySelector('#cart-payload');
   const checkout = document.querySelector('#checkout-button');
+  const paymentDialog = document.querySelector('#payment-dialog');
+  const paymentItems = document.querySelector('#payment-items');
+  const amountInput = document.querySelector('#amount-paid');
+  const amountValue = document.querySelector('#amount-paid-value');
+  const paymentMethod = document.querySelector('#payment-method');
+  const discountInput = document.querySelector('#discount-input');
+  let selectedCategory = '*';
   const formatCOP = (amount) => new Intl.NumberFormat('es-CO', {
     style: 'currency', currency: 'COP', maximumFractionDigits: 0,
   }).format(amount);
@@ -52,6 +59,51 @@
     countEl.textContent = `${count} ${count === 1 ? 'producto' : 'productos'}`;
     payload.value = JSON.stringify([...cart].map(([id, item]) => ({ id, quantity: item.quantity })));
     checkout.disabled = cart.size === 0;
+    drawPaymentSummary(total);
+    applyCatalogFilters();
+  }
+
+  function paymentTotal() {
+    const subtotal = [...cart.values()].reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const discount = Math.min(Math.max(Number(discountInput.value) || 0, 0), subtotal);
+    return { subtotal, discount, total: Math.max(0, subtotal - discount) };
+  }
+
+  function drawPaymentSummary(subtotal = [...cart.values()].reduce((sum, item) => sum + item.price * item.quantity, 0)) {
+    if (!paymentItems) return;
+    paymentItems.replaceChildren();
+    for (const item of cart.values()) {
+      const row = document.createElement('div'); row.className = 'payment-item-row';
+      const label = document.createElement('span'); label.textContent = `${item.quantity} × ${item.name}`;
+      const price = document.createElement('strong'); price.textContent = formatCOP(item.price * item.quantity);
+      row.append(label, price); paymentItems.append(row);
+    }
+    document.querySelector('#payment-subtotal').textContent = formatCOP(subtotal);
+    discountInput.max = String(subtotal);
+    const { total } = paymentTotal();
+    document.querySelector('#payment-total').textContent = formatCOP(total);
+    updateChange();
+  }
+
+  function rawTendered() { return Number(amountInput.dataset.raw || 0); }
+  function setTendered(value) {
+    const normalized = Math.max(0, Math.floor(Number(value) || 0));
+    amountInput.dataset.raw = String(normalized);
+    amountInput.value = normalized ? formatCOP(normalized) : '';
+    amountValue.value = String(normalized);
+    updateChange();
+  }
+  function updateChange() {
+    const { total } = paymentTotal();
+    const isCash = paymentMethod.value === 'Efectivo';
+    if (!isCash) {
+      amountInput.dataset.raw = String(Math.floor(total));
+      amountInput.value = formatCOP(total);
+      amountValue.value = String(Math.floor(total));
+    }
+    const tendered = isCash ? rawTendered() : total;
+    document.querySelector('#change-due').textContent = formatCOP(Math.max(0, tendered - total));
+    document.querySelectorAll('.touch-keypad button').forEach((button) => { button.disabled = !isCash; });
   }
 
   function changeQuantity(id, delta) {
@@ -83,14 +135,45 @@
   });
 
   document.querySelector('#clear-cart').addEventListener('click', () => { cart.clear(); drawCart(); });
-  document.querySelector('#product-search').addEventListener('input', (event) => {
-    const query = event.target.value.trim().toLocaleLowerCase('es');
+  function applyCatalogFilters() {
+    const query = document.querySelector('#product-search').value.trim().toLocaleLowerCase('es');
     for (const card of grid.querySelectorAll('[data-product-id]')) {
-      card.hidden = !`${card.dataset.name} ${card.dataset.category} ${card.dataset.sku}`.toLocaleLowerCase('es').includes(query);
+      const matchesCategory = selectedCategory === '*' || card.dataset.category.toLocaleLowerCase('es') === selectedCategory.toLocaleLowerCase('es');
+      const matchesSearch = `${card.dataset.name} ${card.dataset.category} ${card.dataset.sku}`.toLocaleLowerCase('es').includes(query);
+      card.hidden = !(matchesCategory && matchesSearch);
     }
+  }
+  document.querySelector('#product-search').addEventListener('input', applyCatalogFilters);
+  document.querySelectorAll('[data-category-filter]').forEach((button) => button.addEventListener('click', () => {
+    selectedCategory = button.dataset.categoryFilter;
+    document.querySelectorAll('[data-category-filter]').forEach((tab) => tab.classList.toggle('active', tab === button));
+    applyCatalogFilters();
+  }));
+  checkout.addEventListener('click', () => {
+    if (!cart.size) return;
+    setTendered(0);
+    paymentDialog.showModal();
+    drawPaymentSummary();
   });
-  document.querySelector('#checkout-form').addEventListener('submit', (event) => {
-    if (!cart.size) { event.preventDefault(); return; }
+  document.querySelector('#close-payment').addEventListener('click', () => paymentDialog.close());
+  paymentMethod.addEventListener('change', updateChange);
+  discountInput.addEventListener('input', () => drawPaymentSummary());
+  document.querySelectorAll('.touch-keypad button').forEach((button) => button.addEventListener('click', () => {
+    if (paymentMethod.value !== 'Efectivo') return;
+    const key = button.dataset.key;
+    let value = String(rawTendered());
+    if (key === 'clear') value = '';
+    else if (key === 'back') value = value.slice(0, -1);
+    else value = `${value === '0' ? '' : value}${key}`.slice(0, 12);
+    setTendered(value);
+  }));
+  document.querySelector('#payment-form').addEventListener('submit', (event) => {
+    const { total } = paymentTotal();
+    if (!cart.size || (paymentMethod.value === 'Efectivo' && rawTendered() < total)) {
+      event.preventDefault();
+      window.alert('El valor recibido debe cubrir el total de la compra.');
+      return;
+    }
     checkout.disabled = true;
     checkout.textContent = 'Registrando venta…';
   });
