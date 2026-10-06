@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
@@ -98,25 +99,47 @@ def initialize_database() -> None:
                 stock REAL NOT NULL DEFAULT 0, min_stock REAL DEFAULT 2,
                 unit TEXT DEFAULT 'Unidad', is_active INTEGER DEFAULT 1
             );
+            CREATE TABLE IF NOT EXISTS product_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                is_active INTEGER NOT NULL DEFAULT 1
+            );
             CREATE TABLE IF NOT EXISTS suppliers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-                nit TEXT, phone TEXT, email TEXT, contact_name TEXT
+                nit TEXT, phone TEXT, email TEXT, contact_name TEXT,
+                products_supplied TEXT, details TEXT, is_active INTEGER NOT NULL DEFAULT 1
             );
             CREATE TABLE IF NOT EXISTS sales (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_number TEXT UNIQUE NOT NULL,
                 client_name TEXT DEFAULT 'Cliente General', client_document TEXT,
                 total REAL NOT NULL, payment_method TEXT NOT NULL,
-                payment_reference TEXT, created_at TEXT NOT NULL
+                payment_reference TEXT, created_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Activa'
             );
             CREATE TABLE IF NOT EXISTS sale_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sale_id INTEGER REFERENCES sales(id) ON DELETE CASCADE,
                 product_id INTEGER REFERENCES products(id), quantity REAL NOT NULL,
-                unit_price REAL NOT NULL, subtotal REAL NOT NULL
+                unit_price REAL NOT NULL, subtotal REAL NOT NULL,
+                tax_rate REAL NOT NULL DEFAULT 0, tax_amount REAL NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS purchases (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_id INTEGER REFERENCES suppliers(id),
                 total REAL NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS cash_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                concept TEXT NOT NULL CHECK(concept IN ('VENTA','PROVEEDOR','PAGADO')),
+                amount REAL NOT NULL CHECK(amount >= 0),
+                description TEXT NOT NULL,
+                supplier_name TEXT,
+                occurred_at TEXT NOT NULL,
+                source_sale_id INTEGER UNIQUE REFERENCES sales(id),
+                source_purchase_id INTEGER UNIQUE REFERENCES purchases(id),
+                supplier_id INTEGER REFERENCES suppliers(id),
+                paid_name TEXT,
+                paid_detail TEXT,
+                deleted_at TEXT
             );
             CREATE TABLE IF NOT EXISTS purchase_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -138,6 +161,43 @@ def initialize_database() -> None:
                 db.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
         if "worker_id" not in user_columns:
             db.execute("ALTER TABLE users ADD COLUMN worker_id INTEGER REFERENCES workers(id)")
+        sale_columns = {row["name"] for row in db.execute("PRAGMA table_info(sales)")}
+        for column, definition in {
+            "discount": "REAL NOT NULL DEFAULT 0",
+            "amount_paid": "REAL NOT NULL DEFAULT 0",
+            "change_due": "REAL NOT NULL DEFAULT 0",
+            "cashier_name": "TEXT",
+            "status": "TEXT NOT NULL DEFAULT 'Activa'",
+        }.items():
+            if column not in sale_columns:
+                db.execute(f"ALTER TABLE sales ADD COLUMN {column} {definition}")
+        item_columns = {row["name"] for row in db.execute("PRAGMA table_info(sale_items)")}
+        for column, definition in {"tax_rate": "REAL NOT NULL DEFAULT 0", "tax_amount": "REAL NOT NULL DEFAULT 0"}.items():
+            if column not in item_columns:
+                db.execute(f"ALTER TABLE sale_items ADD COLUMN {column} {definition}")
+        supplier_columns = {row["name"] for row in db.execute("PRAGMA table_info(suppliers)")}
+        for column, definition in {
+            "products_supplied": "TEXT",
+            "details": "TEXT",
+            "is_active": "INTEGER NOT NULL DEFAULT 1",
+        }.items():
+            if column not in supplier_columns:
+                db.execute(f"ALTER TABLE suppliers ADD COLUMN {column} {definition}")
+        transaction_columns = {row["name"] for row in db.execute("PRAGMA table_info(cash_transactions)")}
+        for column, definition in {
+            "supplier_id": "INTEGER REFERENCES suppliers(id)",
+            "paid_name": "TEXT",
+            "paid_detail": "TEXT",
+        }.items():
+            if column not in transaction_columns:
+                db.execute(f"ALTER TABLE cash_transactions ADD COLUMN {column} {definition}")
+        db.execute("""INSERT OR IGNORE INTO cash_transactions(concept,amount,description,occurred_at,source_sale_id)
+            SELECT 'VENTA',total,'Factura ' || invoice_number,created_at,id FROM sales WHERE status!='Anulada'""")
+        db.execute("""INSERT OR IGNORE INTO cash_transactions(concept,amount,description,supplier_name,occurred_at,source_purchase_id,supplier_id)
+            SELECT 'PROVEEDOR',p.total,'Compra a proveedor',s.name,p.created_at,p.id,p.supplier_id
+            FROM purchases p LEFT JOIN suppliers s ON s.id=p.supplier_id""")
+        for row in db.execute("SELECT DISTINCT category FROM products WHERE TRIM(COALESCE(category,'')) != ''"):
+            db.execute("INSERT OR IGNORE INTO product_categories(name) VALUES(?)", (row["category"].strip(),))
         if db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
             today = datetime.now().date().isoformat()
             db.executemany(
@@ -172,6 +232,8 @@ def initialize_database() -> None:
                 [("Queso Campesino Ubaté", "Q001", "Quesos", 14000, 9500, 24, 5, "Bloque"),
                  ("Colaciones de Ubaté Caja", "A001", "Acompañantes", 10000, 6500, 14, 4, "Caja")],
             )
+        for row in db.execute("SELECT DISTINCT category FROM products WHERE TRIM(COALESCE(category,'')) != ''"):
+            db.execute("INSERT OR IGNORE INTO product_categories(name) VALUES(?)", (row["category"].strip(),))
 
 
 @app.on_event("startup")
@@ -307,8 +369,9 @@ def pos_page(request: Request, message: str | None = None):
         return redirect
     with database() as db:
         products = db.execute("SELECT * FROM products WHERE is_active=1 ORDER BY name").fetchall()
-        recent_sales = db.execute("SELECT * FROM sales ORDER BY id DESC LIMIT 8").fetchall()
-    return render(request, "pos.html", products=products, recent_sales=recent_sales, message=message)
+        recent_sales = db.execute("SELECT * FROM sales WHERE status!='Anulada' ORDER BY id DESC LIMIT 8").fetchall()
+        categories = db.execute("SELECT name FROM product_categories WHERE is_active=1 ORDER BY name COLLATE NOCASE").fetchall()
+    return render(request, "pos.html", products=products, categories=categories, recent_sales=recent_sales, message=message)
 
 
 @app.post("/sales")
@@ -321,6 +384,9 @@ async def create_sale(request: Request):
         cart = __import__("json").loads(str(form.get("cart", "[]")))
         if not cart:
             raise ValueError("Agrega productos a la venta")
+        payment_method = str(form.get("payment_method") or "Efectivo")
+        if payment_method not in {"Efectivo", "Transferencia", "Tarjeta", "Nequi", "Daviplata"}:
+            raise ValueError("Selecciona una forma de pago válida")
         with database() as db:
             db.execute("BEGIN IMMEDIATE")
             total = 0.0
@@ -328,30 +394,321 @@ async def create_sale(request: Request):
             for item in cart:
                 product = db.execute("SELECT * FROM products WHERE id=? AND is_active=1", (int(item["id"]),)).fetchone()
                 quantity = float(item["quantity"])
-                if not product or quantity <= 0:
+                if not product or quantity <= 0 or quantity > float(product["stock"]):
                     raise ValueError("Producto o cantidad inválidos")
                 price = float(product["price"])
                 subtotal = price * quantity
                 total += subtotal
                 normalized.append((product, quantity, price, subtotal))
+            discount = round(float(form.get("discount") or 0), 2)
+            if discount < 0 or discount > total:
+                raise ValueError("El descuento debe estar entre cero y el subtotal")
+            tax = 0.0
+            final_total = round(total - discount + tax, 2)
+            try:
+                amount_paid = round(float(form.get("amount_paid") or 0), 2)
+            except ValueError:
+                raise ValueError("Ingresa un valor de pago válido")
+            if payment_method != "Efectivo" and amount_paid <= 0:
+                amount_paid = final_total
+            if amount_paid < final_total:
+                raise ValueError("El valor recibido no alcanza a cubrir el total")
+            change_due = round(amount_paid - final_total, 2) if payment_method == "Efectivo" else 0
             number = db.execute("SELECT COUNT(*) FROM sales").fetchone()[0] + 1
             invoice = f"FV-{number:05d}"
-            created_at = datetime.now(timezone.utc).isoformat()
+            created_at = datetime.now(ZoneInfo("America/Bogota")).isoformat()
+            cashier_name = current_user(request)["name"]
             cursor = db.execute(
-                """INSERT INTO sales(invoice_number,client_name,client_document,total,payment_method,payment_reference,created_at)
-                   VALUES(?,?,?,?,?,?,?)""",
+                """INSERT INTO sales(invoice_number,client_name,client_document,total,payment_method,payment_reference,created_at,
+                   discount,amount_paid,change_due,cashier_name) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                 (invoice, str(form.get("client_name") or "Cliente General"), str(form.get("client_document") or "") or None,
-                 total, str(form.get("payment_method") or "Efectivo"), str(form.get("payment_reference") or "") or None, created_at),
+                 final_total, payment_method, str(form.get("payment_reference") or "") or None, created_at,
+                 discount, amount_paid, change_due, cashier_name),
             )
+            db.execute("""INSERT INTO cash_transactions(concept,amount,description,occurred_at,source_sale_id)
+                VALUES('VENTA',?,?,?,?)""",
+                (final_total, f"Factura {invoice} · {str(form.get('client_name') or 'Cliente General').strip()}", created_at, cursor.lastrowid))
             for product, quantity, price, subtotal in normalized:
-                db.execute("INSERT INTO sale_items(sale_id,product_id,quantity,unit_price,subtotal) VALUES(?,?,?,?,?)",
-                           (cursor.lastrowid, product["id"], quantity, price, subtotal))
-                db.execute("UPDATE products SET stock=MAX(0,stock-?) WHERE id=?", (quantity, product["id"]))
+                db.execute("""INSERT INTO sale_items(sale_id,product_id,quantity,unit_price,subtotal,tax_rate,tax_amount)
+                    VALUES(?,?,?,?,?,0,0)""", (cursor.lastrowid, product["id"], quantity, price, subtotal))
+                db.execute("UPDATE products SET stock=stock-? WHERE id=?", (quantity, product["id"]))
             db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
-                       (created_at, "INFO", f"Venta facturada: {invoice}, total {total:.2f}"))
-        return RedirectResponse(f"/pos?message=Venta%20{invoice}%20registrada", status_code=303)
+                       (created_at, "INFO", f"Venta facturada: {invoice}, total {final_total:.2f}"))
+        return RedirectResponse(f"/sales/{cursor.lastrowid}/receipt", status_code=303)
     except (ValueError, KeyError, TypeError) as error:
         return RedirectResponse(f"/pos?message={str(error).replace(' ', '%20')}", status_code=303)
+
+
+@app.get("/sales/{sale_id}/receipt")
+def sale_receipt(request: Request, sale_id: int):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        sale = db.execute("SELECT * FROM sales WHERE id=?", (sale_id,)).fetchone()
+        items = db.execute("""SELECT si.*,p.name,p.unit FROM sale_items si
+            LEFT JOIN products p ON p.id=si.product_id WHERE si.sale_id=? ORDER BY si.id""", (sale_id,)).fetchall()
+    if not sale:
+        return RedirectResponse("/pos?message=Factura%20no%20encontrada", status_code=303)
+    try:
+        sold_at = datetime.fromisoformat(sale["created_at"])
+    except (TypeError, ValueError):
+        sold_at = datetime.now(ZoneInfo("America/Bogota"))
+    subtotal = sum(float(item["subtotal"]) for item in items)
+    taxes = sum(float(item["tax_amount"] or 0) for item in items)
+    return render(request, "receipt.html", sale=sale, items=items, subtotal=subtotal, taxes=taxes,
+                  sold_date=sold_at.strftime("%d/%m/%Y"), sold_time=sold_at.strftime("%I:%M %p"))
+
+
+@app.get("/suppliers")
+def suppliers_page(request: Request, message: str | None = None):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        suppliers = db.execute("SELECT * FROM suppliers ORDER BY is_active DESC,name COLLATE NOCASE").fetchall()
+    return render(request, "suppliers.html", suppliers=suppliers, message=message)
+
+
+@app.post("/suppliers/create")
+def create_supplier(request: Request, name: str = Form(...), products_supplied: str = Form(""),
+                    details: str = Form(""), phone: str = Form("")):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    name = name.strip()
+    if not name or len(name) > 140:
+        return RedirectResponse("/suppliers?message=El%20nombre%20de%20la%20empresa%20es%20obligatorio", status_code=303)
+    with database() as db:
+        if db.execute("SELECT 1 FROM suppliers WHERE UPPER(name)=UPPER(?)", (name,)).fetchone():
+            return RedirectResponse("/suppliers?message=Ya%20existe%20un%20proveedor%20con%20ese%20nombre", status_code=303)
+        db.execute("INSERT INTO suppliers(name,products_supplied,details,phone) VALUES(?,?,?,?)",
+                   (name, products_supplied.strip() or None, details.strip() or None, phone.strip() or None))
+        db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                   (datetime.now(timezone.utc).isoformat(), "INFO", f"Proveedor registrado: {name}"))
+    return RedirectResponse("/suppliers?message=Proveedor%20registrado", status_code=303)
+
+
+@app.post("/suppliers/{supplier_id}/edit")
+def update_supplier(request: Request, supplier_id: int, name: str = Form(...),
+                    products_supplied: str = Form(""), details: str = Form(""), phone: str = Form("")):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    name = name.strip()
+    if not name or len(name) > 140:
+        return RedirectResponse("/suppliers?message=El%20nombre%20de%20la%20empresa%20es%20obligatorio", status_code=303)
+    with database() as db:
+        duplicate = db.execute("SELECT id FROM suppliers WHERE UPPER(name)=UPPER(?) AND id!=?", (name, supplier_id)).fetchone()
+        if duplicate:
+            return RedirectResponse("/suppliers?message=Ya%20existe%20un%20proveedor%20con%20ese%20nombre", status_code=303)
+        result = db.execute("""UPDATE suppliers SET name=?,products_supplied=?,details=?,phone=?
+            WHERE id=? AND is_active=1""", (name, products_supplied.strip() or None, details.strip() or None,
+                                                 phone.strip() or None, supplier_id))
+        if not result.rowcount:
+            return RedirectResponse("/suppliers?message=Proveedor%20no%20encontrado%20o%20inactivo", status_code=303)
+        db.execute("UPDATE cash_transactions SET supplier_name=? WHERE supplier_id=? AND deleted_at IS NULL", (name, supplier_id))
+        db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                   (datetime.now(timezone.utc).isoformat(), "INFO", f"Proveedor actualizado: ID {supplier_id}"))
+    return RedirectResponse("/suppliers?message=Proveedor%20actualizado", status_code=303)
+
+
+@app.post("/suppliers/{supplier_id}/delete")
+def deactivate_supplier(request: Request, supplier_id: int):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        result = db.execute("UPDATE suppliers SET is_active=0 WHERE id=? AND is_active=1", (supplier_id,))
+        if result.rowcount:
+            db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                       (datetime.now(timezone.utc).isoformat(), "INFO", f"Proveedor desactivado: ID {supplier_id}"))
+    return RedirectResponse("/suppliers?message=Proveedor%20desactivado", status_code=303)
+
+
+@app.post("/suppliers/{supplier_id}/activate")
+def activate_supplier(request: Request, supplier_id: int):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        db.execute("UPDATE suppliers SET is_active=1 WHERE id=?", (supplier_id,))
+    return RedirectResponse("/suppliers?message=Proveedor%20reactivado", status_code=303)
+
+
+@app.get("/paid")
+def paid_page(request: Request, message: str | None = None):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        suppliers = db.execute("SELECT id,name,products_supplied FROM suppliers WHERE is_active=1 ORDER BY name COLLATE NOCASE").fetchall()
+        transactions = db.execute("""SELECT t.*,s.name AS linked_supplier FROM cash_transactions t
+            LEFT JOIN suppliers s ON s.id=t.supplier_id
+            WHERE t.concept IN ('PROVEEDOR','PAGADO') AND t.deleted_at IS NULL
+            ORDER BY t.occurred_at DESC,t.id DESC""").fetchall()
+    paid_transactions = []
+    for row in transactions:
+        transaction = dict(row)
+        moment = datetime.fromisoformat(transaction["occurred_at"])
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=ZoneInfo("America/Bogota"))
+        transaction["local_datetime"] = moment.astimezone(ZoneInfo("America/Bogota")).strftime("%Y-%m-%dT%H:%M")
+        transaction["date_label"] = moment.astimezone(ZoneInfo("America/Bogota")).strftime("%d/%m/%Y %I:%M %p")
+        paid_transactions.append(transaction)
+    return render(request, "paid.html", suppliers=suppliers, transactions=paid_transactions, message=message,
+                  now_local=datetime.now(ZoneInfo("America/Bogota")).strftime("%Y-%m-%dT%H:%M"))
+
+
+@app.post("/paid/create")
+def create_paid(request: Request, payment_type: str = Form(...), amount: float = Form(...),
+                paid_detail: str = Form(...), supplier_id: int | None = Form(None), paid_name: str = Form("")):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    payment_type = payment_type.strip().upper()
+    paid_detail = paid_detail.strip()
+    paid_name = paid_name.strip()
+    if amount <= 0 or not paid_detail:
+        return RedirectResponse("/paid?message=Ingresa%20un%20detalle%20y%20un%20monto%20mayor%20a%20cero", status_code=303)
+    now = datetime.now(ZoneInfo("America/Bogota")).isoformat()
+    with database() as db:
+        if payment_type == "PROVEEDOR":
+            supplier = db.execute("SELECT * FROM suppliers WHERE id=? AND is_active=1", (supplier_id,)).fetchone()
+            if not supplier:
+                return RedirectResponse("/paid?message=Selecciona%20un%20proveedor%20activo", status_code=303)
+            purchase_id = db.execute("INSERT INTO purchases(supplier_id,total,created_at) VALUES(?,?,?)",
+                                     (supplier["id"], amount, now)).lastrowid
+            description = f"Pago a proveedor: {supplier['name']}"
+            db.execute("""INSERT INTO cash_transactions(concept,amount,description,supplier_name,occurred_at,
+                source_purchase_id,supplier_id,paid_detail) VALUES('PROVEEDOR',?,?,?,?,?,?,?)""",
+                (amount, description, supplier["name"], now, purchase_id, supplier["id"], paid_detail))
+        elif payment_type == "OTRO_CONCEPTO":
+            if not paid_name:
+                return RedirectResponse("/paid?message=Ingresa%20el%20nombre%20del%20pagado", status_code=303)
+            db.execute("""INSERT INTO cash_transactions(concept,amount,description,occurred_at,paid_name,paid_detail)
+                VALUES('PAGADO',?,?,?,?,?)""", (amount, paid_name, now, paid_name, paid_detail))
+        else:
+            return RedirectResponse("/paid?message=Selecciona%20un%20tipo%20de%20pagado%20válido", status_code=303)
+        db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                   (now, "INFO", f"Pagado registrado: {payment_type}, {amount:.2f}"))
+    return RedirectResponse("/paid?message=Pagado%20registrado%20y%20agregado%20a%20Transacciones", status_code=303)
+
+
+@app.post("/paid/{transaction_id}/edit")
+def update_paid(request: Request, transaction_id: int, amount: float = Form(...),
+                paid_detail: str = Form(...), supplier_id: int | None = Form(None), paid_name: str = Form("")):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    paid_detail = paid_detail.strip()
+    paid_name = paid_name.strip()
+    if amount <= 0 or not paid_detail:
+        return RedirectResponse("/paid?message=El%20detalle%20es%20obligatorio%20y%20el%20monto%20debe%20ser%20mayor%20a%20cero", status_code=303)
+    with database() as db:
+        transaction = db.execute("SELECT * FROM cash_transactions WHERE id=? AND deleted_at IS NULL AND concept IN ('PROVEEDOR','PAGADO')", (transaction_id,)).fetchone()
+        if not transaction:
+            return RedirectResponse("/paid?message=Pagado%20no%20encontrado", status_code=303)
+        if transaction["concept"] == "PROVEEDOR":
+            supplier = db.execute("SELECT * FROM suppliers WHERE id=? AND is_active=1", (supplier_id,)).fetchone()
+            if not supplier:
+                return RedirectResponse("/paid?message=Selecciona%20un%20proveedor%20activo", status_code=303)
+            description = f"Pago a proveedor: {supplier['name']}"
+            db.execute("UPDATE purchases SET total=?,supplier_id=? WHERE id=?",
+                       (amount, supplier["id"], transaction["source_purchase_id"]))
+            db.execute("""UPDATE cash_transactions SET amount=?,description=?,supplier_name=?,supplier_id=?,paid_detail=?
+                WHERE id=?""", (amount, description, supplier["name"], supplier["id"], paid_detail, transaction_id))
+        else:
+            if not paid_name:
+                return RedirectResponse("/paid?message=Ingresa%20el%20nombre%20del%20pagado", status_code=303)
+            db.execute("""UPDATE cash_transactions SET amount=?,description=?,paid_name=?,paid_detail=? WHERE id=?""",
+                       (amount, paid_name, paid_name, paid_detail, transaction_id))
+        db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                   (datetime.now(timezone.utc).isoformat(), "INFO", f"Pagado actualizado: ID {transaction_id}"))
+    return RedirectResponse("/paid?message=Pagado%20actualizado", status_code=303)
+
+
+@app.post("/paid/{transaction_id}/delete")
+def delete_paid(request: Request, transaction_id: int):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    now = datetime.now(ZoneInfo("America/Bogota")).isoformat()
+    with database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        transaction = db.execute("""SELECT * FROM cash_transactions WHERE id=? AND deleted_at IS NULL
+            AND concept IN ('PROVEEDOR','PAGADO')""", (transaction_id,)).fetchone()
+        if not transaction:
+            return RedirectResponse("/paid?message=Pagado%20no%20encontrado", status_code=303)
+        db.execute("UPDATE cash_transactions SET deleted_at=? WHERE id=?", (now, transaction_id))
+        db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                   (now, "INFO", f"Pagado eliminado: ID {transaction_id}"))
+    return RedirectResponse("/paid?message=Pagado%20eliminado%20y%20reflejado%20en%20Transacciones", status_code=303)
+
+
+@app.get("/transactions")
+def transactions_page(request: Request, concept: str | None = None, show_deleted: bool = False, message: str | None = None):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    if concept not in {None, "VENTA", "PROVEEDOR", "PAGADO"}:
+        concept = None
+    where = []
+    params = []
+    if not show_deleted:
+        where.append("t.deleted_at IS NULL")
+    if concept:
+        where.append("t.concept=?")
+        params.append(concept)
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    with database() as db:
+        transactions = db.execute(f"""SELECT t.*,s.invoice_number,s.status AS sale_status
+            FROM cash_transactions t LEFT JOIN sales s ON s.id=t.source_sale_id
+            {where_sql} ORDER BY t.occurred_at DESC,t.id DESC""", params).fetchall()
+        totals = db.execute("""SELECT COALESCE(SUM(CASE WHEN concept='VENTA' AND deleted_at IS NULL THEN amount ELSE 0 END),0) AS income,
+            COALESCE(SUM(CASE WHEN concept IN ('PROVEEDOR','PAGADO') AND deleted_at IS NULL THEN amount ELSE 0 END),0) AS expense
+            FROM cash_transactions""").fetchone()
+    now_local = datetime.now(ZoneInfo("America/Bogota")).strftime("%Y-%m-%dT%H:%M")
+    local_transactions = []
+    for row in transactions:
+        item = dict(row)
+        try:
+            moment = datetime.fromisoformat(item["occurred_at"])
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=ZoneInfo("America/Bogota"))
+            moment = moment.astimezone(ZoneInfo("America/Bogota"))
+        except (TypeError, ValueError):
+            moment = datetime.now(ZoneInfo("America/Bogota"))
+        item["local_datetime"] = moment.strftime("%Y-%m-%dT%H:%M")
+        item["date_label"] = moment.strftime("%d/%m/%Y")
+        item["time_label"] = moment.strftime("%I:%M %p")
+        local_transactions.append(item)
+    return render(request, "transactions.html", transactions=local_transactions, totals=totals, concept=concept,
+                  show_deleted=show_deleted, message=message, now_local=now_local)
+
+
+@app.post("/transactions/{transaction_id}/delete")
+def delete_cash_transaction(request: Request, transaction_id: int):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    now = datetime.now(ZoneInfo("America/Bogota")).isoformat()
+    with database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        transaction = db.execute("SELECT * FROM cash_transactions WHERE id=? AND deleted_at IS NULL", (transaction_id,)).fetchone()
+        if not transaction:
+            return RedirectResponse("/transactions?message=Movimiento%20no%20encontrado%20o%20ya%20eliminado", status_code=303)
+        if transaction["concept"] == "VENTA" and transaction["source_sale_id"]:
+            sale = db.execute("SELECT status,invoice_number FROM sales WHERE id=?", (transaction["source_sale_id"],)).fetchone()
+            if sale and sale["status"] != "Anulada":
+                for item in db.execute("SELECT product_id,quantity FROM sale_items WHERE sale_id=?", (transaction["source_sale_id"],)):
+                    if item["product_id"]:
+                        db.execute("UPDATE products SET stock=stock+? WHERE id=?", (item["quantity"], item["product_id"]))
+                db.execute("UPDATE sales SET status='Anulada' WHERE id=?", (transaction["source_sale_id"],))
+        db.execute("UPDATE cash_transactions SET deleted_at=? WHERE id=?", (now, transaction_id))
+        db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                   (now, "INFO", f"Movimiento de caja eliminado/anulado: ID {transaction_id}"))
+    return RedirectResponse("/transactions?message=Movimiento%20eliminado%20del%20libro%20de%20caja", status_code=303)
 
 
 @app.get("/inventory")
@@ -361,7 +718,10 @@ def inventory_page(request: Request, message: str | None = None):
         return redirect
     with database() as db:
         products = db.execute("SELECT * FROM products WHERE is_active=1 ORDER BY name").fetchall()
-    return render(request, "inventory.html", products=products, message=message)
+        categories = db.execute("SELECT * FROM product_categories ORDER BY is_active DESC, name COLLATE NOCASE").fetchall()
+        active_categories = [category for category in categories if category["is_active"]]
+    return render(request, "inventory.html", products=products, categories=categories,
+                  active_categories=active_categories, message=message)
 
 
 def admin_only(request: Request):
@@ -372,6 +732,37 @@ def admin_only(request: Request):
     return None
 
 
+@app.post("/categories/create")
+def create_category(request: Request, name: str = Form(...)):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    name = name.strip()
+    if not name or len(name) > 60:
+        return RedirectResponse("/inventory?message=El%20nombre%20de%20sección%20debe%20tener%20entre%201%20y%2060%20caracteres", status_code=303)
+    try:
+        with database() as db:
+            db.execute("INSERT INTO product_categories(name) VALUES(?)", (name,))
+    except sqlite3.IntegrityError:
+        return RedirectResponse("/inventory?message=Ya%20existe%20una%20sección%20con%20ese%20nombre", status_code=303)
+    return RedirectResponse("/inventory?message=Sección%20creada", status_code=303)
+
+
+@app.post("/categories/{category_id}/delete")
+def delete_category(request: Request, category_id: int):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        category = db.execute("SELECT name FROM product_categories WHERE id=? AND is_active=1", (category_id,)).fetchone()
+        if category:
+            in_use = db.execute("SELECT COUNT(*) FROM products WHERE is_active=1 AND category=? COLLATE NOCASE", (category["name"],)).fetchone()[0]
+            if in_use:
+                return RedirectResponse("/inventory?message=Reasigna%20sus%20productos%20antes%20de%20desactivar%20la%20sección", status_code=303)
+            db.execute("UPDATE product_categories SET is_active=0 WHERE id=?", (category_id,))
+    return RedirectResponse("/inventory?message=Sección%20desactivada", status_code=303)
+
+
 @app.get("/inventory/new")
 def new_product_page(request: Request):
     redirect = require_login(request)
@@ -380,7 +771,9 @@ def new_product_page(request: Request):
     redirect = admin_only(request)
     if redirect:
         return redirect
-    return render(request, "product_form.html", product=None, mode="create")
+    with database() as db:
+        categories = db.execute("SELECT name FROM product_categories WHERE is_active=1 ORDER BY name COLLATE NOCASE").fetchall()
+    return render(request, "product_form.html", product=None, mode="create", categories=categories)
 
 
 @app.post("/inventory/create")
@@ -394,6 +787,8 @@ def create_product(request: Request, name: str = Form(...), price: float = Form(
         return RedirectResponse("/inventory?message=Los%20valores%20no%20pueden%20ser%20negativos", status_code=303)
     try:
         with database() as db:
+            if not db.execute("SELECT 1 FROM product_categories WHERE name=? COLLATE NOCASE AND is_active=1", (category.strip(),)).fetchone():
+                return RedirectResponse("/inventory?message=Selecciona%20una%20sección%20activa", status_code=303)
             db.execute("INSERT INTO products(name,sku,category,price,cost,stock,min_stock,unit) VALUES(?,?,?,?,?,?,?,?)",
                        (name.strip(), sku.strip() or None, category.strip() or "Otros", price, cost, stock, min_stock, unit.strip() or "Unidad"))
             db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
@@ -422,9 +817,10 @@ def edit_product_page(request: Request, product_id: int):
         return redirect
     with database() as db:
         product = db.execute("SELECT * FROM products WHERE id=? AND is_active=1", (product_id,)).fetchone()
+        categories = db.execute("SELECT name FROM product_categories WHERE is_active=1 ORDER BY name COLLATE NOCASE").fetchall()
     if not product:
         return RedirectResponse("/inventory?message=Producto%20no%20encontrado", status_code=303)
-    return render(request, "product_form.html", product=product, mode="edit")
+    return render(request, "product_form.html", product=product, mode="edit", categories=categories)
 
 
 @app.post("/inventory/{product_id}/edit")
@@ -438,6 +834,8 @@ def update_product(request: Request, product_id: int, name: str = Form(...), pri
         return RedirectResponse("/inventory?message=Los%20valores%20no%20pueden%20ser%20negativos", status_code=303)
     try:
         with database() as db:
+            if not db.execute("SELECT 1 FROM product_categories WHERE name=? COLLATE NOCASE AND is_active=1", (category.strip(),)).fetchone():
+                return RedirectResponse("/inventory?message=Selecciona%20una%20sección%20activa", status_code=303)
             result = db.execute(
                 """UPDATE products SET name=?,sku=?,category=?,price=?,cost=?,stock=?,min_stock=?,unit=?
                    WHERE id=? AND is_active=1""",
@@ -745,9 +1143,9 @@ def dashboard_page(request: Request):
     if current_user(request)["role"] != "ADMIN":
         return RedirectResponse("/pos", status_code=303)
     with database() as db:
-        stats = db.execute("SELECT COUNT(*) AS count, COALESCE(SUM(total),0) AS total FROM sales").fetchone()
+        stats = db.execute("SELECT COUNT(*) AS count, COALESCE(SUM(total),0) AS total FROM sales WHERE status!='Anulada'").fetchone()
         low_stock = db.execute("SELECT COUNT(*) FROM products WHERE is_active=1 AND stock<=min_stock").fetchone()[0]
-        sales = db.execute("SELECT * FROM sales ORDER BY id DESC LIMIT 12").fetchall()
+        sales = db.execute("SELECT * FROM sales WHERE status!='Anulada' ORDER BY id DESC LIMIT 12").fetchall()
     return render(request, "dashboard.html", stats=stats, low_stock=low_stock, sales=sales)
 
 
