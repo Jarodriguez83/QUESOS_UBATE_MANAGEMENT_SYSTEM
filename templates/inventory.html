@@ -7,13 +7,14 @@
   <span class="stat-chip">{{ products|length }} productos activos</span>
 </div>
 {% if message %}<div class="notice">{{ message }}</div>{% endif %}
+{% if user.role == 'ADMIN' %}<section class="panel category-admin"><div class="crud-section-title"><span class="crud-number">01</span><div><h2>SECCIONES DE PRODUCTOS</h2><p>Crea categorías como Quesos, Jamones u otras que necesites.</p></div></div><form class="category-create-form" action="/categories/create" method="post"><label for="category-name">Nombre de la sección</label><input id="category-name" name="name" maxlength="60" placeholder="Ej. Jamones" required><button class="button button-primary" type="submit">+ Crear sección</button></form><div class="category-admin-list">{% for category in categories %}<div class="category-admin-item"><span>{{ category.name }}</span>{% if category.is_active %}<span class="stock-badge">Activa</span>{% else %}<span class="stock-badge stock-low">Inactiva</span>{% endif %}{% if category.is_active %}<form action="/categories/{{ category.id }}/delete" method="post"><button class="action-link action-delete" type="submit">Desactivar</button></form>{% endif %}</div>{% else %}<p class="muted">Aún no hay secciones.</p>{% endfor %}</div></section>{% endif %}
 <section class="panel product-crud-create">
-  <div class="crud-section-title"><span class="crud-number">01</span><div><h2>CREAR PRODUCTO</h2><p>Agrega un producto nuevo al catálogo de caja.</p></div></div>
+  <div class="crud-section-title"><span class="crud-number">02</span><div><h2>CREAR PRODUCTO</h2><p>Agrega un producto nuevo al catálogo de caja.</p></div></div>
   {% if user.role == 'ADMIN' %}<a class="button button-primary" href="/inventory/new">+ Nuevo producto</a>
   {% else %}<p class="muted">Solo el administrador puede crear productos.</p>{% endif %}
 </section>
 <section class="panel recent-panel product-crud-read">
-  <div class="crud-section-title"><span class="crud-number">02</span><div><h2>LEER PRODUCTOS</h2><p>Catálogo de productos activos, existencias y precios.</p></div></div>
+  <div class="crud-section-title"><span class="crud-number">03</span><div><h2>LEER PRODUCTOS</h2><p>Catálogo de productos activos, existencias y precios.</p></div></div>
   <div class="table-wrap"><table>
     <thead><tr><th>Producto</th><th>SKU</th><th>Categoría</th><th>Existencias</th><th>Precio</th><th>Estado</th><th>Acciones</th></tr></thead>
     <tbody>{% for product in products %}

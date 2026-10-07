@@ -47,3 +47,9 @@ Las cuentas solo se agregan cuando la tabla de usuarios está vacía. La contras
 La integración Gmail/OAuth, configuración de parsers, pagos en vivo, proveedores/compras, reportes completos y sus funciones de voz aún deben trasladarse. Las cuentas heredadas pueden conservar contraseñas en texto plano; las cuentas de trabajadores nuevas usan hash PBKDF2. Antes de desplegar en internet, configura `SESSION_SECRET` con un valor secreto propio.
 
 El lector solicita permiso explícito para la cámara. Los navegadores requieren un contexto seguro: usa `localhost` durante desarrollo o HTTPS al abrir el sistema desde otro dispositivo. El decodificador se sirve como un archivo local del proyecto; si el navegador no puede leer el código, queda disponible la búsqueda manual por SKU.
+
+## Despliegue de pruebas en Render
+
+El archivo `render.yaml` define un servicio web FastAPI con un disco persistente de 1 GB. La base SQLite y las fotos de trabajadores se guardan en ese disco para que los cambios realizados desde varios computadores compartan el mismo estado y sobrevivan reinicios y despliegues. El servicio con disco requiere un plan de Render de pago; revisa el precio que Render muestre antes de crear el Blueprint.
+
+Para desplegar, sube esta rama a GitHub, inicia sesión en Render, crea un **Blueprint** desde el repositorio y confirma los recursos indicados por `render.yaml`. Render genera `SESSION_SECRET` y las contraseñas iniciales de administrador y caja; consúltalas en **Environment** dentro del Dashboard de Render. Los nombres de usuario iniciales son `admin_queuba` y `caja_queuba`. El despliegue empieza con una base de datos nueva: `backend/database.db` no se versiona, por lo que los datos locales no se copian al servicio. Cambia las contraseñas antes de compartir la URL. Esta configuración es para pruebas preliminares, no una puesta en producción.

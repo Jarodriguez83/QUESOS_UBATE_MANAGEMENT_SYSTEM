@@ -22,7 +22,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 
 ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / "backend" / "database.db"
+DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "backend")).expanduser()
+DB_PATH = Path(os.getenv("DATABASE_PATH", DATA_DIR / "database.db")).expanduser()
+UPLOADS_DIR = Path(os.getenv("UPLOADS_DIR", ROOT / "static" / "uploads")).expanduser()
 app = FastAPI(title="Quesos Ubaté | Punto de venta")
 app.add_middleware(
     SessionMiddleware,
@@ -30,6 +32,8 @@ app.add_middleware(
     same_site="lax",
     https_only=os.getenv("COOKIE_HTTPS_ONLY", "false").lower() == "true",
 )
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 templates = Jinja2Templates(directory=ROOT / "templates")
 
@@ -205,8 +209,8 @@ def initialize_database() -> None:
                    (username,password,role,name,cashierCode,document,phone,status,createdDate)
                    VALUES (?,?,?,?,?,?,?,?,?)""",
                 [
-                    ("admin_queuba", "ADM - 999", "ADMIN", "Carlos Gómez (Admin)", "ADM-001", "80.123.456", "320 998 7766", "Activo", today),
-                    ("caja_queuba", "OPE - 123", "OPERATOR", "Juan Rodríguez", "CJ-101", "1.069.452.880", "314 589 2244", "Activo", today),
+                    ("admin_queuba", os.getenv("INITIAL_ADMIN_PASSWORD", "ADM - 999"), "ADMIN", "Carlos Gómez (Admin)", "ADM-001", "80.123.456", "320 998 7766", "Activo", today),
+                    ("caja_queuba", os.getenv("INITIAL_OPERATOR_PASSWORD", "OPE - 123"), "OPERATOR", "Juan Rodríguez", "CJ-101", "1.069.452.880", "314 589 2244", "Activo", today),
                 ],
             )
         legacy_accounts = db.execute("""SELECT * FROM users WHERE worker_id IS NULL
@@ -910,7 +914,7 @@ async def save_worker_photo(photo: UploadFile | None) -> str | None:
     content = await photo.read(3 * 1024 * 1024 + 1)
     if len(content) > 3 * 1024 * 1024:
         raise ValueError("La foto no puede superar 3 MB")
-    folder = ROOT / "static" / "uploads" / "workers"
+    folder = UPLOADS_DIR / "workers"
     folder.mkdir(parents=True, exist_ok=True)
     filename = f"{secrets.token_hex(16)}{extension}"
     (folder / filename).write_bytes(content)

@@ -1646,6 +1646,16 @@ input:checked + .slider:before {
 /* -------------------------------------------------------------
    ANIMATIONS
    ------------------------------------------------------------- */
+@media print {
+  @page { size: 80mm auto; margin: 4mm; }
+  html, body, #root { width: 100% !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  .invoice-print-container { box-sizing: border-box; width: 72mm !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; overflow-wrap: anywhere; }
+  .invoice-details-table { width: 100%; table-layout: fixed; }
+  .invoice-details-table th:first-child, .invoice-details-table td:first-child { width: 55%; overflow-wrap: anywhere; }
+  .invoice-details-table th:nth-child(2), .invoice-details-table td:nth-child(2) { width: 15%; }
+  .invoice-details-table th:nth-child(3), .invoice-details-table td:nth-child(3) { width: 30%; overflow-wrap: anywhere; }
+}
+
 @keyframes slide-in {
   from {
     transform: translateY(20px);

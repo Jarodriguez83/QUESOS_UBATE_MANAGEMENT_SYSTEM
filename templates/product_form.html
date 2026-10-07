@@ -7,7 +7,7 @@
   <form class="product-form" action="{% if mode == 'edit' %}/inventory/{{ product.id }}/edit{% else %}/inventory/create{% endif %}" method="post">
     <label>Nombre del producto<input name="name" value="{{ product.name if product else '' }}" maxlength="120" required autofocus></label>
     <label>SKU / Código de barras<input name="sku" value="{{ product.sku if product and product.sku else '' }}" maxlength="60" placeholder="Ingresa el código impreso en el producto"></label>
-    <label>Categoría<input name="category" value="{{ product.category if product and product.category else 'Quesos' }}" maxlength="60" required></label>
+    <label>Sección / categoría<select name="category" required><option value="">Selecciona una sección</option>{% for category in categories %}<option value="{{ category.name }}" {% if product and product.category == category.name %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></label>
     <label>Unidad de venta<input name="unit" value="{{ product.unit if product and product.unit else 'Unidad' }}" maxlength="30" required></label>
     <label>Precio de venta<input name="price" type="number" min="0" step="1" value="{{ product.price if product else '' }}" required></label>
     <label>Costo<input name="cost" type="number" min="0" step="1" value="{{ product.cost if product else '' }}" required></label>
