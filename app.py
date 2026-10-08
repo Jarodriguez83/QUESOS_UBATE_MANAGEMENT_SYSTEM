@@ -758,13 +758,14 @@ def delete_category(request: Request, category_id: int):
     if redirect:
         return redirect
     with database() as db:
-        category = db.execute("SELECT name FROM product_categories WHERE id=? AND is_active=1", (category_id,)).fetchone()
+        category = db.execute("SELECT name FROM product_categories WHERE id=?", (category_id,)).fetchone()
         if category:
-            in_use = db.execute("SELECT COUNT(*) FROM products WHERE is_active=1 AND category=? COLLATE NOCASE", (category["name"],)).fetchone()[0]
-            if in_use:
-                return RedirectResponse("/inventory?message=Reasigna%20sus%20productos%20antes%20de%20desactivar%20la%20sección", status_code=303)
-            db.execute("UPDATE product_categories SET is_active=0 WHERE id=?", (category_id,))
-    return RedirectResponse("/inventory?message=Sección%20desactivada", status_code=303)
+            if category["name"].casefold() == "otros":
+                return RedirectResponse("/inventory?message=La%20sección%20Otros%20no%20se%20puede%20eliminar", status_code=303)
+            db.execute("INSERT OR IGNORE INTO product_categories(name) VALUES('Otros')")
+            db.execute("UPDATE products SET category='Otros' WHERE category=? COLLATE NOCASE", (category["name"],))
+            db.execute("DELETE FROM product_categories WHERE id=?", (category_id,))
+    return RedirectResponse("/inventory?message=Sección%20eliminada%3B%20sus%20productos%20se%20movieron%20a%20Otros", status_code=303)
 
 
 @app.get("/inventory/new")
