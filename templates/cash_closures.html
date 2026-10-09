@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Cierre de caja · Quesos Ubaté{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">CONTROL ADMINISTRATIVO</p><h1>Cierre de caja</h1><p class="muted">Resumen desde el último cierre registrado hasta este momento.</p></div><span class="live-pill"><i></i> Corte {{ now_local[11:16] }}</span></div>
+{% if message %}<div class="notice" role="status">{{ message }}</div>{% endif %}
+<section class="cash-close-grid">
+  <article class="panel stat-card"><span>Total de caja</span><strong>${{ '{:,.0f}'.format(summary.total_cash).replace(',', '.') }}</strong><small>Ingresos totales menos pagos realizados</small></article>
+  <article class="panel stat-card"><span>Venta neta</span><strong>${{ '{:,.0f}'.format(summary.net_sales).replace(',', '.') }}</strong><small>Ventas activas del período</small></article>
+  <article class="panel stat-card"><span>Pagados realizados</span><strong class="money-out">−${{ '{:,.0f}'.format(summary.paid_total).replace(',', '.') }}</strong><small>Pagos y compras del período</small></article>
+  <article class="panel stat-card"><span>Efectivo en caja</span><strong>${{ '{:,.0f}'.format(summary.cash_on_hand).replace(',', '.') }}</strong><small>Efectivo recibido menos pagos</small></article>
+</section>
+<section class="panel cash-close-payments"><div><p class="eyebrow">INGRESOS POR FORMA DE PAGO</p><h2>Detalle de ingresos</h2><p class="muted">Los medios electrónicos agrupan transferencias, Nequi, Daviplata y tarjeta.</p></div><dl><div><dt>Efectivo</dt><dd>${{ '{:,.0f}'.format(summary.cash_income).replace(',', '.') }}</dd></div><div><dt>Transferencia y otros medios</dt><dd>${{ '{:,.0f}'.format(summary.transfer_income).replace(',', '.') }}</dd></div><div class="cash-close-total"><dt>Total de ingresos</dt><dd>${{ '{:,.0f}'.format(summary.total_income).replace(',', '.') }}</dd></div></dl>
+<form action="/cash-closures" method="post" onsubmit="return confirm('¿Generar y guardar el cierre de caja de este período?');"><button class="button button-primary" type="submit">Generar factura de cierre</button></form></section>
+<section class="panel recent-panel"><div class="panel-heading"><div><h2>Cierres anteriores</h2><p>Facturas guardadas para consulta e impresión</p></div></div><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Fecha y hora</th><th>Responsable</th><th class="align-right">Total de caja</th><th></th></tr></thead><tbody>{% for item in closures %}<tr><td><strong>{{ item.invoice_number }}</strong></td><td>{{ item.closed_at[:16].replace('T',' ') }}</td><td>{{ item.cashier_name }}</td><td class="align-right">${{ '{:,.0f}'.format(item.total_cash).replace(',', '.') }}</td><td><a class="action-link" href="/cash-closures/{{ item.invoice_number }}">Ver factura</a></td></tr>{% else %}<tr><td colspan="5" class="empty-state">Todavía no hay cierres registrados.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}
