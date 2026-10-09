@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Cierre {{ closure.invoice_number }} · Quesos Ubaté{% endblock %}
+{% block content %}
+<div class="receipt-actions"><a class="button button-secondary" href="/cash-closures">← Cierre de caja</a><button class="button button-primary" type="button" onclick="window.print()">Imprimir factura</button></div>
+<article class="receipt-paper cash-closure-paper"><header class="receipt-header"><h1>QUESOS UBATÉ</h1><p>CIERRE ADMINISTRATIVO DE CAJA</p><p>NIT: 62266892-2 · BOGOTÁ</p></header>
+<div class="receipt-meta"><div><span>FACTURA DE CIERRE</span><strong>{{ closure.invoice_number }}</strong></div><div><span>RESPONSABLE</span><strong>{{ closure.cashier_name }}</strong></div><div><span>FECHA</span><strong>{{ closed_date }}</strong></div><div><span>HORA</span><strong>{{ closed_time }}</strong></div></div>
+<div class="cash-close-period"><span>PERÍODO DEL CORTE</span><strong>{{ period_start_label }} — {{ closed_date }} {{ closed_time }}</strong></div>
+<div class="receipt-totals"><div><span>VENTA NETA</span><strong>${{ '{:,.0f}'.format(closure.net_sales).replace(',', '.') }}</strong></div><div><span>PAGADOS REALIZADOS</span><strong>−${{ '{:,.0f}'.format(closure.paid_total).replace(',', '.') }}</strong></div><div><span>EFECTIVO EN CAJA</span><strong>${{ '{:,.0f}'.format(closure.cash_on_hand).replace(',', '.') }}</strong></div><div><span>INGRESOS · EFECTIVO</span><strong>${{ '{:,.0f}'.format(closure.cash_income).replace(',', '.') }}</strong></div><div><span>INGRESOS · TRANSFERENCIA Y OTROS</span><strong>${{ '{:,.0f}'.format(closure.transfer_income).replace(',', '.') }}</strong></div><div class="receipt-grand-total"><span>TOTAL DE INGRESOS</span><strong>${{ '{:,.0f}'.format(closure.total_income).replace(',', '.') }}</strong></div><div class="cash-close-net"><span>TOTAL DE CAJA</span><strong>${{ '{:,.0f}'.format(closure.total_cash).replace(',', '.') }}</strong></div></div>
+<footer class="receipt-footer">CIERRE GENERADO {{ closed_date }} · {{ closed_time }}</footer></article>
+{% endblock %}
