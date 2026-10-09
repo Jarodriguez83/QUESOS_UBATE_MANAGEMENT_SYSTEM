@@ -145,6 +145,20 @@ def initialize_database() -> None:
                 paid_detail TEXT,
                 deleted_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS cash_closures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                invoice_number TEXT UNIQUE NOT NULL,
+                period_start TEXT NOT NULL,
+                closed_at TEXT NOT NULL,
+                cashier_name TEXT NOT NULL,
+                total_cash REAL NOT NULL,
+                net_sales REAL NOT NULL,
+                paid_total REAL NOT NULL,
+                cash_on_hand REAL NOT NULL,
+                cash_income REAL NOT NULL,
+                transfer_income REAL NOT NULL,
+                total_income REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS purchase_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 purchase_id INTEGER REFERENCES purchases(id) ON DELETE CASCADE,
@@ -1152,6 +1166,81 @@ def dashboard_page(request: Request):
         low_stock = db.execute("SELECT COUNT(*) FROM products WHERE is_active=1 AND stock<=min_stock").fetchone()[0]
         sales = db.execute("SELECT * FROM sales WHERE status!='Anulada' ORDER BY id DESC LIMIT 12").fetchall()
     return render(request, "dashboard.html", stats=stats, low_stock=low_stock, sales=sales)
+
+
+@app.get("/cash-closures")
+def cash_closures_page(request: Request, message: str | None = None):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    now = datetime.now(ZoneInfo("America/Bogota"))
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    with database() as db:
+        last_close = db.execute("SELECT closed_at FROM cash_closures ORDER BY id DESC LIMIT 1").fetchone()
+        period_start = last_close["closed_at"] if last_close else today_start
+        summary = db.execute("""SELECT
+            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' THEN t.amount ELSE 0 END),0) AS net_sales,
+            COALESCE(SUM(CASE WHEN t.concept IN ('PROVEEDOR','PAGADO') THEN t.amount ELSE 0 END),0) AS paid_total,
+            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' AND s.payment_method='Efectivo' THEN t.amount ELSE 0 END),0) AS cash_income,
+            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' AND s.payment_method!='Efectivo' THEN t.amount ELSE 0 END),0) AS transfer_income
+            FROM cash_transactions t LEFT JOIN sales s ON s.id=t.source_sale_id
+            WHERE t.deleted_at IS NULL AND t.occurred_at>? AND t.occurred_at<=?""", (period_start, now.isoformat())).fetchone()
+        closures = db.execute("SELECT * FROM cash_closures ORDER BY id DESC LIMIT 30").fetchall()
+    values = dict(summary)
+    values["total_income"] = values["cash_income"] + values["transfer_income"]
+    values["cash_on_hand"] = values["cash_income"] - values["paid_total"]
+    values["total_cash"] = values["total_income"] - values["paid_total"]
+    return render(request, "cash_closures.html", summary=values, period_start=period_start,
+                  now_local=now.strftime("%Y-%m-%dT%H:%M"), closures=closures, message=message)
+
+
+@app.post("/cash-closures")
+def create_cash_closure(request: Request):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    now = datetime.now(ZoneInfo("America/Bogota"))
+    closed_at = now.isoformat()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    with database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        last_close = db.execute("SELECT closed_at FROM cash_closures ORDER BY id DESC LIMIT 1").fetchone()
+        period_start = last_close["closed_at"] if last_close else today_start
+        summary = db.execute("""SELECT
+            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' THEN t.amount ELSE 0 END),0) AS net_sales,
+            COALESCE(SUM(CASE WHEN t.concept IN ('PROVEEDOR','PAGADO') THEN t.amount ELSE 0 END),0) AS paid_total,
+            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' AND s.payment_method='Efectivo' THEN t.amount ELSE 0 END),0) AS cash_income,
+            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' AND s.payment_method!='Efectivo' THEN t.amount ELSE 0 END),0) AS transfer_income
+            FROM cash_transactions t LEFT JOIN sales s ON s.id=t.source_sale_id
+            WHERE t.deleted_at IS NULL AND t.occurred_at>? AND t.occurred_at<=?""", (period_start, closed_at)).fetchone()
+        sales_sum, paid_sum, cash_sum, transfer_sum = (float(summary[k]) for k in ("net_sales", "paid_total", "cash_income", "transfer_income"))
+        total_income = cash_sum + transfer_sum
+        number = db.execute("SELECT COUNT(*) FROM cash_closures").fetchone()[0] + 1
+        invoice = f"CC-{number:05d}"
+        db.execute("""INSERT INTO cash_closures(invoice_number,period_start,closed_at,cashier_name,total_cash,net_sales,
+            paid_total,cash_on_hand,cash_income,transfer_income,total_income) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            (invoice, period_start, closed_at, current_user(request)["name"], total_income-paid_sum,
+             sales_sum, paid_sum, cash_sum-paid_sum, cash_sum, transfer_sum, total_income))
+        db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                   (closed_at, "INFO", f"Cierre de caja generado: {invoice}"))
+    return RedirectResponse(f"/cash-closures/{invoice}", status_code=303)
+
+
+@app.get("/cash-closures/{invoice_number}")
+def cash_closure_receipt(request: Request, invoice_number: str):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        closure = db.execute("SELECT * FROM cash_closures WHERE invoice_number=?", (invoice_number,)).fetchone()
+    if not closure:
+        return RedirectResponse("/cash-closures?message=Cierre%20de%20caja%20no%20encontrado", status_code=303)
+    closure = dict(closure)
+    start = datetime.fromisoformat(closure["period_start"]).astimezone(ZoneInfo("America/Bogota"))
+    end = datetime.fromisoformat(closure["closed_at"]).astimezone(ZoneInfo("America/Bogota"))
+    return render(request, "cash_closure_receipt.html", closure=closure,
+                  period_start_label=start.strftime("%d/%m/%Y %I:%M %p"),
+                  closed_date=end.strftime("%d/%m/%Y"), closed_time=end.strftime("%I:%M %p"))
 
 
 @app.get("/health")
