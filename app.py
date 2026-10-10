@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import os
 import re
+import json
+import base64
+import asyncio
+import html as html_lib
+import urllib.parse
+import urllib.request
 import hashlib
 import hmac
 import secrets
@@ -84,6 +90,12 @@ def initialize_database() -> None:
                 id TEXT PRIMARY KEY, bank_name TEXT NOT NULL, client_name TEXT NOT NULL,
                 amount REAL NOT NULL, reference TEXT, payment_date TEXT,
                 received_at TEXT NOT NULL, raw_body TEXT, status TEXT DEFAULT 'PROCESADO'
+            );
+            CREATE TABLE IF NOT EXISTS payment_email_settings (
+                id INTEGER PRIMARY KEY CHECK(id=1), gmail_email TEXT NOT NULL,
+                sender_email TEXT NOT NULL, regex_client TEXT NOT NULL,
+                regex_amount TEXT NOT NULL, client_id TEXT NOT NULL,
+                client_secret TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS parsers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, bank_name TEXT UNIQUE NOT NULL,
@@ -206,6 +218,7 @@ def initialize_database() -> None:
             "supplier_id": "INTEGER REFERENCES suppliers(id)",
             "paid_name": "TEXT",
             "paid_detail": "TEXT",
+            "payment_id": "TEXT REFERENCES payments(id)",
         }.items():
             if column not in transaction_columns:
                 db.execute(f"ALTER TABLE cash_transactions ADD COLUMN {column} {definition}")
@@ -255,8 +268,165 @@ def initialize_database() -> None:
 
 
 @app.on_event("startup")
-def on_startup() -> None:
+async def on_startup() -> None:
     initialize_database()
+    asyncio.create_task(gmail_poll_loop())
+
+
+def google_request(url: str, *, data: dict | None = None, token: str | None = None):
+    body = urllib.parse.urlencode(data).encode() if data is not None else None
+    headers = {"Content-Type": "application/x-www-form-urlencoded"} if data is not None else {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, data=body, headers=headers)
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.loads(response.read().decode())
+
+
+def gmail_access_token():
+    with database() as db:
+        settings = db.execute("SELECT * FROM payment_email_settings WHERE id=1").fetchone()
+        saved = db.execute("SELECT value FROM gmail_config WHERE key='oauth_token'").fetchone()
+    if not settings or not saved:
+        return None
+    tokens = json.loads(saved["value"])
+    if tokens.get("expires_at", 0) < int(datetime.now(timezone.utc).timestamp()) + 60:
+        if not tokens.get("refresh_token"):
+            return None
+        refreshed = google_request("https://oauth2.googleapis.com/token", data={
+            "client_id": settings["client_id"], "client_secret": settings["client_secret"],
+            "refresh_token": tokens["refresh_token"], "grant_type": "refresh_token"})
+        tokens.update(refreshed)
+        tokens["expires_at"] = int(datetime.now(timezone.utc).timestamp()) + int(refreshed.get("expires_in", 3600))
+        with database() as db:
+            db.execute("INSERT OR REPLACE INTO gmail_config(key,value) VALUES('oauth_token',?)", (json.dumps(tokens),))
+    return tokens.get("access_token")
+
+
+def decode_gmail_body(payload):
+    texts = []
+    def walk(part):
+        if part.get("mimeType") in {"text/plain", "text/html"} and part.get("body", {}).get("data"):
+            raw = part["body"]["data"]
+            decoded = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode("utf-8", "replace")
+            if part.get("mimeType") == "text/html":
+                decoded = re.sub(r"<(style|script)[^>]*>[\s\S]*?</\1>", " ", decoded, flags=re.I)
+                decoded = re.sub(r"<\s*(br|/p|/div|/li)[^>]*>", "\n", decoded, flags=re.I)
+                decoded = re.sub(r"<[^>]+>", " ", decoded)
+                decoded = html_lib.unescape(decoded)
+            texts.append(decoded)
+        for child in part.get("parts", []):
+            walk(child)
+    walk(payload)
+    return "\n".join(texts)
+
+
+def extract_group(text: str, pattern: str):
+    match = re.search(pattern, text, re.IGNORECASE)
+    return (match.group(1) if match and match.lastindex else match.group(0) if match else "").strip()
+
+
+def amount_from_email(value: str) -> float:
+    cleaned = re.sub(r"[^0-9.,]", "", value)
+    if not cleaned:
+        return 0
+    if "," in cleaned and "." in cleaned:
+        cleaned = cleaned.replace(".", "").replace(",", ".") if cleaned.rfind(",") > cleaned.rfind(".") else cleaned.replace(",", "")
+    elif "," in cleaned or "." in cleaned:
+        sep = "," if "," in cleaned else "."
+        chunks = cleaned.split(sep)
+        cleaned = "".join(chunks) if len(chunks[-1]) == 3 else ".".join(chunks)
+    try:
+        return float(cleaned)
+    except ValueError:
+        return 0
+
+
+def interpret_payment_email(subject: str, body: str, settings):
+    """Classify from message meaning and extract likely customer and transfer amount."""
+    text = f"{subject}\n{body}"
+    normalized = text.casefold()
+    positive = re.search(r"\b(recibiste|recibió|recibimos|has recibido|te llegó|te enviaron|te transfirieron|te consignaron|recibiste una transferencia|transferencia recibida|transferencia exitosa|transferencia a tu cuenta|pago recibido|pago exitoso|pago confirmado|abono recibido|abono a tu cuenta|consignación recibida|se acreditó|dinero recibido)\b", normalized)
+    negative = re.search(r"\b(enviaste|envió|transferiste|pagaste|compra realizada|pago enviado|transferencia enviada|transferencia rechazada|pago rechazado|operación fallida|transacción fallida|no se pudo|pendiente de pago|solicitud de pago)\b", normalized)
+    if not positive or negative:
+        return {"is_payment": False, "client": "No aplica", "amount": 0}
+
+    raw_amount = extract_group(text, settings["regex_amount"]) if settings["regex_amount"].strip() else ""
+    if not raw_amount:
+        amount_patterns = (
+            r"(?:valor|monto|total recibido|importe|abono|por valor de|recibiste)\s*(?:del?|de)?\s*[:\-]?\s*(?:COP|COL\$|\$)?\s*([0-9][0-9.,]*)",
+            r"(?:COP|COL\$|\$)\s*([0-9][0-9.,]*)",
+        )
+        for pattern in amount_patterns:
+            raw_amount = extract_group(text, pattern)
+            if raw_amount:
+                break
+    amount = amount_from_email(raw_amount)
+    if amount <= 0:
+        return {"is_payment": True, "client": "Cliente por identificar", "amount": 0}
+
+    client = extract_group(text, settings["regex_client"]) if settings["regex_client"].strip() else ""
+    if not client:
+        client_pattern = r"(?:de parte de|remitente|nombre del cliente|cliente|te envió|te envio|recibiste de)\s*[:\-]?\s*([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]+){0,4})"
+        client = extract_group(text, client_pattern)
+    if client:
+        client = re.split(r"\s+(?:por|el día|a tu cuenta|desde tu cuenta)\b", client, maxsplit=1, flags=re.I)[0].strip(" .,:;-\n")
+    return {"is_payment": True, "client": client or "Cliente por identificar", "amount": amount}
+
+
+async def poll_gmail_once():
+    try:
+        token = await asyncio.to_thread(gmail_access_token)
+        if not token:
+            return
+        with database() as db:
+            settings = db.execute("SELECT * FROM payment_email_settings WHERE id=1").fetchone()
+        if not settings:
+            return
+        query = urllib.parse.quote("newer_than:2d -in:sent -in:trash -in:spam")
+        messages = []
+        page_token = None
+        for _ in range(5):
+            page_url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages?q={query}&maxResults=100"
+            if page_token:
+                page_url += "&pageToken=" + urllib.parse.quote(page_token)
+            listing = await asyncio.to_thread(google_request, page_url, token=token)
+            messages.extend(listing.get("messages", []))
+            page_token = listing.get("nextPageToken")
+            if not page_token:
+                break
+        for item in messages:
+            with database() as db:
+                if db.execute("SELECT 1 FROM payments WHERE id=?", (item["id"],)).fetchone():
+                    continue
+            msg = await asyncio.to_thread(google_request, f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{item['id']}?format=full", token=token)
+            headers = {h["name"].lower(): h["value"] for h in msg.get("payload", {}).get("headers", [])}
+            body = decode_gmail_body(msg.get("payload", {}))
+            interpreted = interpret_payment_email(headers.get("subject", ""), body, settings)
+            received = datetime.fromtimestamp(int(msg.get("internalDate", 0))/1000, ZoneInfo("America/Bogota")).isoformat()
+            status = "PROCESADO" if interpreted["is_payment"] and interpreted["amount"] > 0 else "PAGO_POR_REVISAR" if interpreted["is_payment"] else "NO_ES_PAGO"
+            amount = interpreted["amount"]
+            client = interpreted["client"]
+            with database() as db:
+                db.execute("INSERT OR IGNORE INTO payments(id,bank_name,client_name,amount,reference,payment_date,received_at,raw_body,status) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (item["id"], headers.get("from", "Remitente desconocido")[:160], client, amount, headers.get("subject", "")[:160], received, datetime.now(timezone.utc).isoformat(), body, status))
+                if db.execute("SELECT changes()").fetchone()[0]:
+                    if status == "PROCESADO":
+                        db.execute("INSERT INTO cash_transactions(concept,amount,description,occurred_at,payment_id) VALUES('VENTA',?,?,?,?)",
+                            (amount, f"Transferencia confirmada · {client}", received, item["id"]))
+                    db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)", (datetime.now(timezone.utc).isoformat(), "INFO", f"Correo clasificado {status}: {client} · {amount:.2f}"))
+    except Exception as exc:
+        with database() as db:
+            db.execute("INSERT INTO audit_logs(timestamp,level,message,details) VALUES(?,?,?,?)", (datetime.now(timezone.utc).isoformat(), "ERROR", "Error al revisar Gmail para confirmación de pagos", str(exc)[:500]))
+
+
+async def gmail_poll_loop():
+    while True:
+        try:
+            await poll_gmail_once()
+        except Exception:
+            pass
+        await asyncio.sleep(30)
 
 
 def current_user(request: Request):
@@ -659,6 +829,8 @@ def delete_paid(request: Request, transaction_id: int):
         if not transaction:
             return RedirectResponse("/paid?message=Pagado%20no%20encontrado", status_code=303)
         db.execute("UPDATE cash_transactions SET deleted_at=? WHERE id=?", (now, transaction_id))
+        if transaction["payment_id"]:
+            db.execute("UPDATE payments SET status='ANULADO' WHERE id=?", (transaction["payment_id"],))
         db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
                    (now, "INFO", f"Pagado eliminado: ID {transaction_id}"))
     return RedirectResponse("/paid?message=Pagado%20eliminado%20y%20reflejado%20en%20Transacciones", status_code=303)
@@ -748,6 +920,82 @@ def admin_only(request: Request):
     if current_user(request)["role"] != "ADMIN":
         return RedirectResponse("/inventory?message=Solo%20el%20administrador%20puede%20modificar%20productos", status_code=303)
     return None
+
+
+@app.get("/payment-confirmations")
+def payment_confirmations_page(request: Request, message: str | None = None):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        settings = db.execute("SELECT * FROM payment_email_settings WHERE id=1").fetchone()
+        connected = db.execute("SELECT 1 FROM gmail_config WHERE key='oauth_token'").fetchone() is not None
+        payments = db.execute("SELECT * FROM payments ORDER BY received_at DESC LIMIT 300").fetchall()
+        total = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE status='PROCESADO'").fetchone()[0]
+    return render(request, "payment_confirmations.html", settings=settings, connected=connected,
+                  payments=payments, total=total, message=message)
+
+
+@app.post("/payment-confirmations/connect")
+def payment_confirmations_connect(request: Request, gmail_email: str = Form(...), sender_email: str = Form(""),
+        regex_client: str = Form(""), regex_amount: str = Form(""), client_id: str = Form(...), client_secret: str = Form(...)):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    gmail_email = gmail_email.strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", gmail_email):
+        return RedirectResponse("/payment-confirmations?message=Revisa%20el%20correo%20que%20se%20conectará", status_code=303)
+    try:
+        if regex_client.strip(): re.compile(regex_client, re.I)
+        if regex_amount.strip(): re.compile(regex_amount, re.I)
+    except re.error:
+        return RedirectResponse("/payment-confirmations?message=Las%20reglas%20de%20lectura%20no%20son%20válidas", status_code=303)
+    with database() as db:
+        db.execute("INSERT OR REPLACE INTO payment_email_settings(id,gmail_email,sender_email,regex_client,regex_amount,client_id,client_secret) VALUES(1,?,?,?,?,?,?)",
+            (gmail_email, sender_email.strip().lower(), regex_client.strip(), regex_amount.strip(), client_id.strip(), client_secret.strip()))
+        db.execute("DELETE FROM gmail_config WHERE key='oauth_token'")
+    state = secrets.token_urlsafe(24)
+    request.session["gmail_oauth_state"] = state
+    with database() as db:
+        config = db.execute("SELECT client_id FROM payment_email_settings WHERE id=1").fetchone()
+    callback = str(request.url_for("gmail_callback"))
+    params = urllib.parse.urlencode({"client_id": config["client_id"], "redirect_uri": callback,
+        "response_type": "code", "scope": "https://www.googleapis.com/auth/gmail.readonly",
+        "access_type": "offline", "prompt": "consent", "state": state})
+    return RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?" + params, status_code=303)
+
+
+@app.get("/gmail/callback", name="gmail_callback")
+def gmail_callback(request: Request, code: str | None = None, state: str | None = None, error: str | None = None):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    if error or not code or not state or not hmac.compare_digest(state, request.session.pop("gmail_oauth_state", "")):
+        return RedirectResponse("/payment-confirmations?message=No%20se%20pudo%20autorizar%20Gmail", status_code=303)
+    with database() as db:
+        settings = db.execute("SELECT * FROM payment_email_settings WHERE id=1").fetchone()
+    try:
+        tokens = google_request("https://oauth2.googleapis.com/token", data={"code": code, "client_id": settings["client_id"],
+            "client_secret": settings["client_secret"], "redirect_uri": str(request.url_for("gmail_callback")), "grant_type": "authorization_code"})
+        tokens["expires_at"] = int(datetime.now(timezone.utc).timestamp()) + int(tokens.get("expires_in", 3600))
+        profile = google_request("https://gmail.googleapis.com/gmail/v1/users/me/profile", token=tokens["access_token"])
+        if profile.get("emailAddress", "").lower() != settings["gmail_email"]:
+            raise ValueError("La cuenta Google autorizada no coincide con el correo configurado")
+        with database() as db:
+            db.execute("INSERT OR REPLACE INTO gmail_config(key,value) VALUES('oauth_token',?)", (json.dumps(tokens),))
+    except Exception as exc:
+        return RedirectResponse("/payment-confirmations?message=" + urllib.parse.quote(str(exc)[:180]), status_code=303)
+    return RedirectResponse("/payment-confirmations?message=Correo%20conectado%20y%20verificado", status_code=303)
+
+
+@app.post("/payment-confirmations/disconnect")
+def payment_confirmations_disconnect(request: Request):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    with database() as db:
+        db.execute("DELETE FROM gmail_config WHERE key='oauth_token'")
+    return RedirectResponse("/payment-confirmations?message=Correo%20desconectado", status_code=303)
 
 
 @app.post("/categories/create")
@@ -1165,7 +1413,10 @@ def dashboard_page(request: Request):
         stats = db.execute("SELECT COUNT(*) AS count, COALESCE(SUM(total),0) AS total FROM sales WHERE status!='Anulada'").fetchone()
         low_stock = db.execute("SELECT COUNT(*) FROM products WHERE is_active=1 AND stock<=min_stock").fetchone()[0]
         sales = db.execute("SELECT * FROM sales WHERE status!='Anulada' ORDER BY id DESC LIMIT 12").fetchall()
-    return render(request, "dashboard.html", stats=stats, low_stock=low_stock, sales=sales)
+        confirmed_total = db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE status='PROCESADO'").fetchone()[0]
+        confirmed_payments = db.execute("SELECT * FROM payments WHERE status='PROCESADO' ORDER BY received_at DESC LIMIT 10").fetchall()
+    return render(request, "dashboard.html", stats=stats, low_stock=low_stock, sales=sales,
+                  confirmed_total=confirmed_total, confirmed_payments=confirmed_payments)
 
 
 @app.get("/cash-closures")
@@ -1179,10 +1430,10 @@ def cash_closures_page(request: Request, message: str | None = None):
         last_close = db.execute("SELECT closed_at FROM cash_closures ORDER BY id DESC LIMIT 1").fetchone()
         period_start = last_close["closed_at"] if last_close else today_start
         summary = db.execute("""SELECT
-            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' THEN t.amount ELSE 0 END),0) AS net_sales,
+            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND (t.source_sale_id IS NULL OR s.status!='Anulada') THEN t.amount ELSE 0 END),0) AS net_sales,
             COALESCE(SUM(CASE WHEN t.concept IN ('PROVEEDOR','PAGADO') THEN t.amount ELSE 0 END),0) AS paid_total,
             COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' AND s.payment_method='Efectivo' THEN t.amount ELSE 0 END),0) AS cash_income,
-            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' AND s.payment_method!='Efectivo' THEN t.amount ELSE 0 END),0) AS transfer_income
+            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND (t.source_sale_id IS NULL OR (s.status!='Anulada' AND s.payment_method!='Efectivo')) THEN t.amount ELSE 0 END),0) AS transfer_income
             FROM cash_transactions t LEFT JOIN sales s ON s.id=t.source_sale_id
             WHERE t.deleted_at IS NULL AND t.occurred_at>? AND t.occurred_at<=?""", (period_start, now.isoformat())).fetchone()
         closures = db.execute("SELECT * FROM cash_closures ORDER BY id DESC LIMIT 30").fetchall()
@@ -1207,10 +1458,10 @@ def create_cash_closure(request: Request):
         last_close = db.execute("SELECT closed_at FROM cash_closures ORDER BY id DESC LIMIT 1").fetchone()
         period_start = last_close["closed_at"] if last_close else today_start
         summary = db.execute("""SELECT
-            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' THEN t.amount ELSE 0 END),0) AS net_sales,
+            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND (t.source_sale_id IS NULL OR s.status!='Anulada') THEN t.amount ELSE 0 END),0) AS net_sales,
             COALESCE(SUM(CASE WHEN t.concept IN ('PROVEEDOR','PAGADO') THEN t.amount ELSE 0 END),0) AS paid_total,
             COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' AND s.payment_method='Efectivo' THEN t.amount ELSE 0 END),0) AS cash_income,
-            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND s.status!='Anulada' AND s.payment_method!='Efectivo' THEN t.amount ELSE 0 END),0) AS transfer_income
+            COALESCE(SUM(CASE WHEN t.concept='VENTA' AND (t.source_sale_id IS NULL OR (s.status!='Anulada' AND s.payment_method!='Efectivo')) THEN t.amount ELSE 0 END),0) AS transfer_income
             FROM cash_transactions t LEFT JOIN sales s ON s.id=t.source_sale_id
             WHERE t.deleted_at IS NULL AND t.occurred_at>? AND t.occurred_at<=?""", (period_start, closed_at)).fetchone()
         sales_sum, paid_sum, cash_sum, transfer_sum = (float(summary[k]) for k in ("net_sales", "paid_total", "cash_income", "transfer_income"))
