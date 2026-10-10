@@ -42,9 +42,10 @@ Las cuentas solo se agregan cuando la tabla de usuarios está vacía. La contras
 - Calendario semanal de trabajadores con los tres turnos configurados (09:00–18:00, 13:00–21:00 y 09:00–21:00), días libres y conservación del historial.
 - Consulta del resumen de ventas para el administrador.
 - Resumen de ventas para el administrador.
+- Sesión administrativa **CONFIRMACIÓN PAGOS**: conecta por OAuth una cuenta Gmail de solo lectura y analiza todos los correos entrantes de los últimos dos días cada 30 segundos, sin filtrar por remitente. Clasifica los mensajes como pago confirmado, pago por revisar o no es pago. Cada pago confirmado se guarda una sola vez en el historial y como ingreso por transferencia en Resumen, Transacciones y Cierre de caja.
 - La API Express y la interfaz React anteriores siguen disponibles como `npm run dev:legacy` y `npm run start:legacy` durante la migración.
 
-La integración Gmail/OAuth, configuración de parsers, pagos en vivo, proveedores/compras, reportes completos y sus funciones de voz aún deben trasladarse. Las cuentas heredadas pueden conservar contraseñas en texto plano; las cuentas de trabajadores nuevas usan hash PBKDF2. Antes de desplegar en internet, configura `SESSION_SECRET` con un valor secreto propio.
+La integración Gmail/OAuth de la sesión nueva requiere crear credenciales OAuth en Google Cloud, habilitar Gmail API y autorizar la URI de redirección mostrada en pantalla. Las reglas de lectura se configuran según el formato real de los comprobantes del banco. Las cuentas heredadas pueden conservar contraseñas en texto plano; las cuentas de trabajadores nuevas usan hash PBKDF2. Antes de desplegar en internet, configura `SESSION_SECRET` con un valor secreto propio.
 
 El lector solicita permiso explícito para la cámara. Los navegadores requieren un contexto seguro: usa `localhost` durante desarrollo o HTTPS al abrir el sistema desde otro dispositivo. El decodificador se sirve como un archivo local del proyecto; si el navegador no puede leer el código, queda disponible la búsqueda manual por SKU.
 
