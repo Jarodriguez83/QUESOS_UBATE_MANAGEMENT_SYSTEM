@@ -628,7 +628,7 @@ async def create_sale(request: Request):
 
 
 @app.get("/sales/{sale_id}/receipt")
-def sale_receipt(request: Request, sale_id: int):
+def sale_receipt(request: Request, sale_id: int, message: str | None = None):
     redirect = require_login(request)
     if redirect:
         return redirect
@@ -645,7 +645,30 @@ def sale_receipt(request: Request, sale_id: int):
     subtotal = sum(float(item["subtotal"]) for item in items)
     taxes = sum(float(item["tax_amount"] or 0) for item in items)
     return render(request, "receipt.html", sale=sale, items=items, subtotal=subtotal, taxes=taxes,
-                  sold_date=sold_at.strftime("%d/%m/%Y"), sold_time=sold_at.strftime("%I:%M %p"))
+                  sold_date=sold_at.strftime("%d/%m/%Y"), sold_time=sold_at.strftime("%I:%M %p"), message=message)
+
+
+@app.post("/sales/{sale_id}/edit-invoice")
+def edit_sale_invoice(request: Request, sale_id: int, client_name: str = Form(...),
+                      client_document: str = Form("")):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
+    client_name = client_name.strip()
+    client_document = client_document.strip()
+    if not client_name or len(client_name) > 140 or len(client_document) > 40:
+        return RedirectResponse(f"/sales/{sale_id}/receipt?message=Revisa%20los%20datos%20del%20cliente", status_code=303)
+    with database() as db:
+        sale = db.execute("SELECT status,invoice_number FROM sales WHERE id=?", (sale_id,)).fetchone()
+        if not sale or sale["status"] == "Anulada":
+            return RedirectResponse("/transactions?message=La%20venta%20no%20se%20puede%20editar", status_code=303)
+        db.execute("UPDATE sales SET client_name=?,client_document=? WHERE id=?",
+                   (client_name, client_document or None, sale_id))
+        db.execute("UPDATE cash_transactions SET description=? WHERE source_sale_id=? AND concept='VENTA'",
+                   (f"Factura {sale['invoice_number']} · {client_name}", sale_id))
+        db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                   (datetime.now(ZoneInfo("America/Bogota")).isoformat(), "INFO", f"Datos del cliente corregidos en factura ID {sale_id}"))
+    return RedirectResponse(f"/sales/{sale_id}/receipt?message=Datos%20de%20factura%20actualizados", status_code=303)
 
 
 @app.get("/suppliers")
@@ -838,9 +861,13 @@ def delete_paid(request: Request, transaction_id: int):
 
 @app.get("/transactions")
 def transactions_page(request: Request, concept: str | None = None, show_deleted: bool = False, message: str | None = None):
-    redirect = admin_only(request)
+    redirect = require_login(request)
     if redirect:
         return redirect
+    is_admin = current_user(request)["role"] == "ADMIN"
+    if not is_admin:
+        concept = "VENTA"
+        show_deleted = False
     if concept not in {None, "VENTA", "PROVEEDOR", "PAGADO"}:
         concept = None
     where = []
@@ -858,6 +885,8 @@ def transactions_page(request: Request, concept: str | None = None, show_deleted
         totals = db.execute("""SELECT COALESCE(SUM(CASE WHEN concept='VENTA' AND deleted_at IS NULL THEN amount ELSE 0 END),0) AS income,
             COALESCE(SUM(CASE WHEN concept IN ('PROVEEDOR','PAGADO') AND deleted_at IS NULL THEN amount ELSE 0 END),0) AS expense
             FROM cash_transactions""").fetchone()
+        if not is_admin:
+            totals = {"income": totals["income"], "expense": 0}
     now_local = datetime.now(ZoneInfo("America/Bogota")).strftime("%Y-%m-%dT%H:%M")
     local_transactions = []
     for row in transactions:
@@ -874,7 +903,7 @@ def transactions_page(request: Request, concept: str | None = None, show_deleted
         item["time_label"] = moment.strftime("%I:%M %p")
         local_transactions.append(item)
     return render(request, "transactions.html", transactions=local_transactions, totals=totals, concept=concept,
-                  show_deleted=show_deleted, message=message, now_local=now_local)
+                  show_deleted=show_deleted, message=message, now_local=now_local, is_admin=is_admin)
 
 
 @app.post("/transactions/{transaction_id}/delete")
