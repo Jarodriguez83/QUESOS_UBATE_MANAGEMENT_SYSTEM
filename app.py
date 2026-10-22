@@ -672,13 +672,54 @@ def edit_sale_invoice(request: Request, sale_id: int, client_name: str = Form(..
 
 
 @app.get("/suppliers")
-def suppliers_page(request: Request, message: str | None = None):
+def suppliers_page(request: Request, message: str | None = None, month: str | None = None):
     redirect = admin_only(request)
     if redirect:
         return redirect
+    local_now = datetime.now(ZoneInfo("America/Bogota"))
+    selected_month = month if month and re.fullmatch(r"\d{4}-\d{2}", month) else local_now.strftime("%Y-%m")
+    try:
+        month_start = datetime.strptime(selected_month, "%Y-%m").replace(tzinfo=ZoneInfo("America/Bogota"))
+    except ValueError:
+        selected_month = local_now.strftime("%Y-%m")
+        month_start = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_end = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    first_trend_index = month_start.year * 12 + month_start.month - 1 - 11
+    trend_start = datetime(first_trend_index // 12, first_trend_index % 12 + 1, 1,
+                           tzinfo=ZoneInfo("America/Bogota"))
     with database() as db:
         suppliers = db.execute("SELECT * FROM suppliers ORDER BY is_active DESC,name COLLATE NOCASE").fetchall()
-    return render(request, "suppliers.html", suppliers=suppliers, message=message)
+        monthly_purchases = db.execute("""SELECT s.id AS supplier_id, s.name AS supplier_name,
+                COALESCE(SUM(p.total),0) AS total, COUNT(p.id) AS purchase_count
+            FROM suppliers s
+            LEFT JOIN purchases p ON p.supplier_id=s.id
+                AND datetime(p.created_at)>=datetime(?) AND datetime(p.created_at)<datetime(?)
+                AND NOT EXISTS (SELECT 1 FROM cash_transactions t
+                    WHERE t.source_purchase_id=p.id AND t.deleted_at IS NOT NULL)
+            GROUP BY s.id, s.name
+            HAVING COALESCE(SUM(p.total),0)>0
+            ORDER BY total DESC, s.name COLLATE NOCASE""", (month_start.isoformat(), month_end.isoformat())).fetchall()
+        trend_rows = db.execute("""SELECT strftime('%Y-%m',datetime(p.created_at,'-5 hours')) AS month,
+                COALESCE(SUM(p.total),0) AS total
+            FROM purchases p
+            WHERE datetime(p.created_at)>=datetime(?) AND datetime(p.created_at)<datetime(?)
+                AND NOT EXISTS (SELECT 1 FROM cash_transactions t
+                    WHERE t.source_purchase_id=p.id AND t.deleted_at IS NOT NULL)
+            GROUP BY strftime('%Y-%m',datetime(p.created_at,'-5 hours'))""",
+            (trend_start.isoformat(), month_end.isoformat())).fetchall()
+    monthly_total = sum(row["total"] for row in monthly_purchases)
+    highest_supplier = next((row for row in monthly_purchases if row["total"] > 0), None)
+    chart_suppliers = [dict(row) for row in monthly_purchases]
+    trend_by_month = {row["month"]: row["total"] for row in trend_rows}
+    monthly_trend = []
+    for offset in range(12):
+        month_index = first_trend_index + offset
+        month_key = f"{month_index // 12:04d}-{month_index % 12 + 1:02d}"
+        monthly_trend.append({"month": month_key, "total": trend_by_month.get(month_key, 0)})
+    return render(request, "suppliers.html", suppliers=suppliers, message=message,
+                  monthly_purchases=monthly_purchases, monthly_total=monthly_total,
+                  highest_supplier=highest_supplier, selected_month=selected_month,
+                  monthly_trend=monthly_trend, chart_suppliers=chart_suppliers)
 
 
 @app.post("/suppliers/create")
