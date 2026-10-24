@@ -18,13 +18,15 @@
   const formatCOP = (amount) => new Intl.NumberFormat('es-CO', {
     style: 'currency', currency: 'COP', maximumFractionDigits: 0,
   }).format(amount);
+  const isWeight = (unit) => /^(g|gr|gramos?|kg|kilos?|kilogramos?)$/i.test((unit || '').trim());
+  const lineAmount = (item) => Math.round(item.price * item.quantity);
 
   function drawCart() {
     itemsEl.replaceChildren();
     let total = 0;
     let count = 0;
     for (const [id, item] of cart) {
-      const subtotal = item.price * item.quantity;
+      const subtotal = lineAmount(item);
       total += subtotal;
       count += item.quantity;
       const row = document.createElement('div');
@@ -34,17 +36,21 @@
       const name = document.createElement('strong');
       name.textContent = item.name;
       const price = document.createElement('small');
-      price.textContent = `${formatCOP(item.price)} c/u`;
+      price.textContent = `${formatCOP(item.price)} / ${item.unit || 'unidad'}`;
       detail.append(name, price);
       const controls = document.createElement('div');
       controls.className = 'quantity-control';
       const minus = document.createElement('button');
       minus.type = 'button'; minus.textContent = '−'; minus.setAttribute('aria-label', `Restar ${item.name}`);
-      minus.addEventListener('click', () => changeQuantity(id, -1));
-      const quantity = document.createElement('span'); quantity.textContent = String(item.quantity);
+      minus.addEventListener('click', () => changeQuantity(id, isWeight(item.unit) ? -0.05 : -1));
+      const quantity = document.createElement('input');
+      quantity.type = 'number'; quantity.min = isWeight(item.unit) ? '0.001' : '1';
+      quantity.step = isWeight(item.unit) ? '0.001' : '1'; quantity.value = String(item.quantity);
+      quantity.setAttribute('aria-label', `Cantidad de ${item.name}`);
+      quantity.addEventListener('change', () => setQuantity(id, quantity.value));
       const plus = document.createElement('button');
       plus.type = 'button'; plus.textContent = '+'; plus.setAttribute('aria-label', `Sumar ${item.name}`);
-      plus.addEventListener('click', () => changeQuantity(id, 1));
+      plus.addEventListener('click', () => changeQuantity(id, isWeight(item.unit) ? 0.05 : 1));
       controls.append(minus, quantity, plus);
       const amount = document.createElement('strong'); amount.className = 'cart-subtotal'; amount.textContent = formatCOP(subtotal);
       row.append(detail, controls, amount);
@@ -56,7 +62,8 @@
       itemsEl.append(empty);
     }
     totalEl.textContent = formatCOP(total);
-    countEl.textContent = `${count} ${count === 1 ? 'producto' : 'productos'}`;
+    const countLabel = Number.isInteger(count) ? String(count) : count.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+    countEl.textContent = `${countLabel} ${count === 1 ? 'producto' : 'productos'}`;
     payload.value = JSON.stringify([...cart].map(([id, item]) => ({ id, quantity: item.quantity })));
     checkout.disabled = cart.size === 0;
     drawPaymentSummary(total);
@@ -64,18 +71,18 @@
   }
 
   function paymentTotal() {
-    const subtotal = [...cart.values()].reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const discount = Math.min(Math.max(Number(discountInput.value) || 0, 0), subtotal);
+    const subtotal = [...cart.values()].reduce((sum, item) => sum + lineAmount(item), 0);
+    const discount = Math.min(Math.max(Math.round(Number(discountInput.value) || 0), 0), subtotal);
     return { subtotal, discount, total: Math.max(0, subtotal - discount) };
   }
 
-  function drawPaymentSummary(subtotal = [...cart.values()].reduce((sum, item) => sum + item.price * item.quantity, 0)) {
+  function drawPaymentSummary(subtotal = [...cart.values()].reduce((sum, item) => sum + lineAmount(item), 0)) {
     if (!paymentItems) return;
     paymentItems.replaceChildren();
     for (const item of cart.values()) {
       const row = document.createElement('div'); row.className = 'payment-item-row';
-      const label = document.createElement('span'); label.textContent = `${item.quantity} × ${item.name}`;
-      const price = document.createElement('strong'); price.textContent = formatCOP(item.price * item.quantity);
+      const label = document.createElement('span'); label.textContent = `${item.quantity} ${item.unit || ''} × ${item.name}`.trim();
+      const price = document.createElement('strong'); price.textContent = formatCOP(lineAmount(item));
       row.append(label, price); paymentItems.append(row);
     }
     document.querySelector('#payment-subtotal').textContent = formatCOP(subtotal);
@@ -109,14 +116,26 @@
   function changeQuantity(id, delta) {
     const item = cart.get(String(id));
     if (!item) return;
-    item.quantity += delta;
-    if (item.quantity < 1) cart.delete(String(id));
+    setQuantity(id, item.quantity + delta);
+  }
+
+  function setQuantity(id, value) {
+    const item = cart.get(String(id));
+    if (!item) return;
+    const parsedQuantity = Number(value);
+    const quantity = Number.isFinite(parsedQuantity) ? Math.round(parsedQuantity * 1000) / 1000 : parsedQuantity;
+    const card = grid.querySelector(`[data-product-id="${CSS.escape(String(id))}"]`);
+    if (!Number.isFinite(quantity) || quantity <= 0) cart.delete(String(id));
+    else if (quantity > Number(card?.dataset.stock || 0)) {
+      window.alert('La cantidad supera las existencias disponibles.');
+      return;
+    } else item.quantity = quantity;
     drawCart();
   }
 
   function addProductCard(card, fromScanner = false) {
     const id = card.dataset.productId;
-    const item = cart.get(id) || { id, name: card.dataset.name, price: Number(card.dataset.price), quantity: 0 };
+    const item = cart.get(id) || { id, name: card.dataset.name, price: Number(card.dataset.price), unit: card.dataset.unit, quantity: 0 };
     if (item.quantity >= Number(card.dataset.stock)) {
       if (fromScanner) setScannerStatus(`No hay existencias disponibles de ${card.dataset.name}.`, 'error');
       else window.alert('No hay más unidades disponibles de este producto.');
