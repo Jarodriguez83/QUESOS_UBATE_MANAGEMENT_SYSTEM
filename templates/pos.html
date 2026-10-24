@@ -9,7 +9,7 @@
     <div class="category-tabs" role="group" aria-label="Secciones de productos"><button type="button" class="category-tab active" data-category-filter="*">Todos</button>{% for category in categories %}<button type="button" class="category-tab" data-category-filter="{{ category.name }}">{{ category.name }}</button>{% endfor %}</div>
     <div class="product-grid" id="product-grid">
       {% for product in products %}
-      <button class="product-card" type="button" data-product-id="{{ product.id }}" data-sku="{{ product.sku or '' }}" data-name="{{ product.name }}" data-category="{{ product.category or 'Otros' }}" data-price="{{ product.price }}" data-stock="{{ product.stock }}">
+      <button class="product-card" type="button" data-product-id="{{ product.id }}" data-sku="{{ product.sku or '' }}" data-name="{{ product.name }}" data-category="{{ product.category or 'Otros' }}" data-price="{{ product.price }}" data-stock="{{ product.stock }}" data-unit="{{ product.unit or 'Unidad' }}">
         <span class="product-category">{{ product.category or 'Otros' }}</span><strong>{{ product.name }}</strong><span class="product-stock">{{ product.stock|int if product.stock == product.stock|int else product.stock }} {{ product.unit or 'Unidad' }} disponibles</span><span class="product-price" data-cop="{{ product.price }}">${{ '{:,.0f}'.format(product.price).replace(',', '.') }}</span>
       </button>
       {% else %}<div class="empty-state">No hay productos activos. Agrégalos desde Inventario.</div>{% endfor %}
