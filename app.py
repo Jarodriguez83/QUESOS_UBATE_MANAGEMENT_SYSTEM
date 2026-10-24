@@ -25,6 +25,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
+from money import ZERO, cop_amount, decimal_value, line_subtotal, sale_totals, valid_quantity_scale
 
 
 ROOT = Path(__file__).resolve().parent
@@ -32,9 +33,13 @@ DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "backend")).expanduser()
 DB_PATH = Path(os.getenv("DATABASE_PATH", DATA_DIR / "database.db")).expanduser()
 UPLOADS_DIR = Path(os.getenv("UPLOADS_DIR", ROOT / "static" / "uploads")).expanduser()
 app = FastAPI(title="Quesos Ubaté | Punto de venta")
+_session_secret = os.getenv("SESSION_SECRET")
+_is_production = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "")).strip().lower() in {"production", "prod"}
+if _is_production and not _session_secret:
+    raise RuntimeError("SESSION_SECRET must be set in production")
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET", "change-this-secret-before-deployment"),
+    secret_key=_session_secret or secrets.token_urlsafe(32),
     same_site="lax",
     https_only=os.getenv("COOKIE_HTTPS_ONLY", "false").lower() == "true",
 )
@@ -231,15 +236,19 @@ def initialize_database() -> None:
             db.execute("INSERT OR IGNORE INTO product_categories(name) VALUES(?)", (row["category"].strip(),))
         if db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
             today = datetime.now().date().isoformat()
-            db.executemany(
-                """INSERT INTO users
-                   (username,password,role,name,cashierCode,document,phone,status,createdDate)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
-                [
-                    ("admin_queuba", os.getenv("INITIAL_ADMIN_PASSWORD", "ADM - 999"), "ADMIN", "Carlos Gómez (Admin)", "ADM-001", "80.123.456", "320 998 7766", "Activo", today),
-                    ("caja_queuba", os.getenv("INITIAL_OPERATOR_PASSWORD", "OPE - 123"), "OPERATOR", "Juan Rodríguez", "CJ-101", "1.069.452.880", "314 589 2244", "Activo", today),
-                ],
-            )
+            initial_users = []
+            admin_password = os.getenv("INITIAL_ADMIN_PASSWORD")
+            operator_password = os.getenv("INITIAL_OPERATOR_PASSWORD")
+            if admin_password:
+                initial_users.append(("admin_queuba", hash_password(admin_password), "ADMIN", "Carlos Gómez (Admin)", "ADM-001", "80.123.456", "320 998 7766", "Activo", today))
+            if operator_password:
+                initial_users.append(("caja_queuba", hash_password(operator_password), "OPERATOR", "Juan Rodríguez", "CJ-101", "1.069.452.880", "314 589 2244", "Activo", today))
+            if initial_users:
+                db.executemany(
+                    """INSERT INTO users
+                       (username,password,role,name,cashierCode,document,phone,status,createdDate)
+                       VALUES (?,?,?,?,?,?,?,?,?)""", initial_users,
+                )
         legacy_accounts = db.execute("""SELECT * FROM users WHERE worker_id IS NULL
             AND UPPER(role) IN ('OPERATOR','OPERADOR','CAJERO','OPERARIO')""").fetchall()
         for account in legacy_accounts:
@@ -473,8 +482,14 @@ def hash_password(password: str) -> str:
     return f"pbkdf2_sha256${salt.hex()}${digest.hex()}"
 
 
+def is_password_hash(stored: str) -> bool:
+    return stored.startswith("pbkdf2_sha256$")
+
+
 def verify_password(stored: str, supplied: str) -> bool:
-    if stored.startswith("pbkdf2_sha256$"):
+    if not stored or not supplied:
+        return False
+    if is_password_hash(stored):
         try:
             _, salt_hex, digest_hex = stored.split("$", 2)
             digest = hashlib.pbkdf2_hmac("sha256", supplied.encode("utf-8"), bytes.fromhex(salt_hex), 240_000)
@@ -503,30 +518,16 @@ def login(
     selected_role = normalize_role(access_role)
     if selected_role is None:
         return RedirectResponse("/login?error=Selecciona%20un%20tipo%20de%20acceso%20válido", status_code=303)
-    # The requested ADMIN/ADMIN credentials are accepted only in administrator mode.
-    if (
-        selected_role == "ADMIN"
-        and cashier_code.strip().upper() == "ADMIN"
-        and password.strip().upper() == "ADMIN"
-    ):
-        request.session["user"] = {
-            "id": 0, "name": "ADMINISTRADOR", "username": "ADMIN",
-            "cashierCode": "ADMIN", "role": "ADMIN",
-        }
-        with database() as db:
-            db.execute(
-                "INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
-                (datetime.now(timezone.utc).isoformat(), "INFO", "Inicio de sesión del administrador principal"),
-            )
-        return RedirectResponse("/dashboard", status_code=303)
+    if cashier_code.strip().upper() == "ADMIN" and password.strip().upper() == "ADMIN":
+        return RedirectResponse("/login?error=Credenciales%20incorrectas", status_code=303)
     with database() as db:
         user = db.execute(
             "SELECT * FROM users WHERE UPPER(username)=UPPER(?) OR UPPER(cashierCode)=UPPER(?)",
             (cashier_code.strip(), cashier_code.strip()),
         ).fetchone()
-    if not user or not verify_password(user["password"], password):
+    if not user or not user["password"] or not verify_password(user["password"], password):
         return RedirectResponse("/login?error=Credenciales%20incorrectas", status_code=303)
-    if user["status"] == "Inactivo":
+    if (user["status"] or "").strip().casefold() != "activo":
         return RedirectResponse("/login?error=La%20cuenta%20está%20inactiva", status_code=303)
     account_role = normalize_role(user["role"])
     if account_role != selected_role:
@@ -534,6 +535,11 @@ def login(
             "/login?error=El%20tipo%20de%20acceso%20no%20coincide%20con%20tu%20cuenta",
             status_code=303,
         )
+    if not is_password_hash(user["password"]):
+        # Existing plaintext accounts remain usable for one successful login, then
+        # are upgraded in place so operators are not locked out during deployment.
+        with database() as db:
+            db.execute("UPDATE users SET password=? WHERE id=?", (hash_password(password), user["id"]))
     request.session["user"] = {
         "id": user["id"], "name": user["name"], "username": user["username"],
         "cashierCode": user["cashierCode"], "role": account_role,
@@ -577,31 +583,30 @@ async def create_sale(request: Request):
             raise ValueError("Selecciona una forma de pago válida")
         with database() as db:
             db.execute("BEGIN IMMEDIATE")
-            total = 0.0
             normalized = []
             for item in cart:
                 product = db.execute("SELECT * FROM products WHERE id=? AND is_active=1", (int(item["id"]),)).fetchone()
-                quantity = float(item["quantity"])
-                if not product or quantity <= 0 or quantity > float(product["stock"]):
+                quantity = decimal_value(item["quantity"])
+                stock = decimal_value(product["stock"]) if product else ZERO
+                if (not product or not valid_quantity_scale(quantity, product["unit"])
+                        or quantity > stock):
                     raise ValueError("Producto o cantidad inválidos")
-                price = float(product["price"])
-                subtotal = price * quantity
-                total += subtotal
+                price = decimal_value(product["price"])
+                subtotal = line_subtotal(price, quantity)
                 normalized.append((product, quantity, price, subtotal))
-            discount = round(float(form.get("discount") or 0), 2)
-            if discount < 0 or discount > total:
-                raise ValueError("El descuento debe estar entre cero y el subtotal")
-            tax = 0.0
-            final_total = round(total - discount + tax, 2)
+            discount_input = cop_amount(form.get("discount") or 0)
+            subtotal, discount, final_total = sale_totals(
+                (item[3] for item in normalized), discount_input,
+            )
             try:
-                amount_paid = round(float(form.get("amount_paid") or 0), 2)
-            except ValueError:
+                amount_paid = cop_amount(form.get("amount_paid") or 0)
+            except (ValueError, TypeError):
                 raise ValueError("Ingresa un valor de pago válido")
             if payment_method != "Efectivo" and amount_paid <= 0:
                 amount_paid = final_total
             if amount_paid < final_total:
                 raise ValueError("El valor recibido no alcanza a cubrir el total")
-            change_due = round(amount_paid - final_total, 2) if payment_method == "Efectivo" else 0
+            change_due = cop_amount(amount_paid - final_total) if payment_method == "Efectivo" else ZERO
             number = db.execute("SELECT COUNT(*) FROM sales").fetchone()[0] + 1
             invoice = f"FV-{number:05d}"
             created_at = datetime.now(ZoneInfo("America/Bogota")).isoformat()
@@ -610,16 +615,16 @@ async def create_sale(request: Request):
                 """INSERT INTO sales(invoice_number,client_name,client_document,total,payment_method,payment_reference,created_at,
                    discount,amount_paid,change_due,cashier_name) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                 (invoice, str(form.get("client_name") or "Cliente General"), str(form.get("client_document") or "") or None,
-                 final_total, payment_method, str(form.get("payment_reference") or "") or None, created_at,
-                 discount, amount_paid, change_due, cashier_name),
+                 str(final_total), payment_method, str(form.get("payment_reference") or "") or None, created_at,
+                 str(discount), str(amount_paid), str(change_due), cashier_name),
             )
             db.execute("""INSERT INTO cash_transactions(concept,amount,description,occurred_at,source_sale_id)
                 VALUES('VENTA',?,?,?,?)""",
-                (final_total, f"Factura {invoice} · {str(form.get('client_name') or 'Cliente General').strip()}", created_at, cursor.lastrowid))
+                (str(final_total), f"Factura {invoice} · {str(form.get('client_name') or 'Cliente General').strip()}", created_at, cursor.lastrowid))
             for product, quantity, price, subtotal in normalized:
                 db.execute("""INSERT INTO sale_items(sale_id,product_id,quantity,unit_price,subtotal,tax_rate,tax_amount)
-                    VALUES(?,?,?,?,?,0,0)""", (cursor.lastrowid, product["id"], quantity, price, subtotal))
-                db.execute("UPDATE products SET stock=stock-? WHERE id=?", (quantity, product["id"]))
+                    VALUES(?,?,?,?,?,0,0)""", (cursor.lastrowid, product["id"], str(quantity), str(price), str(subtotal)))
+                db.execute("UPDATE products SET stock=stock-? WHERE id=?", (str(quantity), product["id"]))
             db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
                        (created_at, "INFO", f"Venta facturada: {invoice}, total {final_total:.2f}"))
         return RedirectResponse(f"/sales/{cursor.lastrowid}/receipt", status_code=303)
@@ -642,8 +647,8 @@ def sale_receipt(request: Request, sale_id: int, message: str | None = None):
         sold_at = datetime.fromisoformat(sale["created_at"])
     except (TypeError, ValueError):
         sold_at = datetime.now(ZoneInfo("America/Bogota"))
-    subtotal = sum(float(item["subtotal"]) for item in items)
-    taxes = sum(float(item["tax_amount"] or 0) for item in items)
+    subtotal = sum((decimal_value(item["subtotal"]) for item in items), ZERO)
+    taxes = sum((decimal_value(item["tax_amount"] or 0) for item in items), ZERO)
     return render(request, "receipt.html", sale=sale, items=items, subtotal=subtotal, taxes=taxes,
                   sold_date=sold_at.strftime("%d/%m/%Y"), sold_time=sold_at.strftime("%I:%M %p"), message=message)
 
@@ -985,10 +990,16 @@ def inventory_page(request: Request, message: str | None = None):
 
 
 def admin_only(request: Request):
-    if not current_user(request):
+    session_user = current_user(request)
+    if not session_user:
         return RedirectResponse("/login", status_code=303)
-    if current_user(request)["role"] != "ADMIN":
+    if session_user.get("role") != "ADMIN" or not session_user.get("id"):
         return RedirectResponse("/inventory?message=Solo%20el%20administrador%20puede%20modificar%20productos", status_code=303)
+    with database() as db:
+        account = db.execute("SELECT role,status FROM users WHERE id=?", (session_user["id"],)).fetchone()
+    if not account or (account["status"] or "").strip().casefold() != "activo" or normalize_role(account["role"]) != "ADMIN":
+        request.session.clear()
+        return RedirectResponse("/login?error=La%20cuenta%20no%20está%20autorizada", status_code=303)
     return None
 
 
@@ -1114,20 +1125,25 @@ def new_product_page(request: Request):
 
 
 @app.post("/inventory/create")
-def create_product(request: Request, name: str = Form(...), price: float = Form(...), cost: float = Form(...),
-                   sku: str = Form(""), category: str = Form("Otros"), stock: float = Form(0),
-                   min_stock: float = Form(2), unit: str = Form("Unidad")):
+def create_product(request: Request, name: str = Form(...), price: str = Form(...), cost: str = Form(...),
+                   sku: str = Form(""), category: str = Form("Otros"), stock: str = Form("0"),
+                   min_stock: str = Form("2"), unit: str = Form("Unidad")):
     redirect = admin_only(request)
     if redirect:
         return redirect
-    if price < 0 or cost < 0 or stock < 0 or min_stock < 0:
+    try:
+        price_value, cost_value = decimal_value(price), decimal_value(cost)
+        stock_value, min_stock_value = decimal_value(stock), decimal_value(min_stock)
+    except ValueError:
+        return RedirectResponse("/inventory?message=Ingresa%20valores%20numéricos%20válidos", status_code=303)
+    if price_value < 0 or cost_value < 0 or not valid_quantity_scale(stock_value, unit, allow_zero=True) or not valid_quantity_scale(min_stock_value, unit, allow_zero=True):
         return RedirectResponse("/inventory?message=Los%20valores%20no%20pueden%20ser%20negativos", status_code=303)
     try:
         with database() as db:
             if not db.execute("SELECT 1 FROM product_categories WHERE name=? COLLATE NOCASE AND is_active=1", (category.strip(),)).fetchone():
                 return RedirectResponse("/inventory?message=Selecciona%20una%20sección%20activa", status_code=303)
             db.execute("INSERT INTO products(name,sku,category,price,cost,stock,min_stock,unit) VALUES(?,?,?,?,?,?,?,?)",
-                       (name.strip(), sku.strip() or None, category.strip() or "Otros", price, cost, stock, min_stock, unit.strip() or "Unidad"))
+                       (name.strip(), sku.strip() or None, category.strip() or "Otros", str(price_value), str(cost_value), str(stock_value), str(min_stock_value), unit.strip() or "Unidad"))
             db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
                        (datetime.now(timezone.utc).isoformat(), "INFO", f"Producto registrado: {name.strip()}"))
     except sqlite3.IntegrityError:
@@ -1161,13 +1177,18 @@ def edit_product_page(request: Request, product_id: int):
 
 
 @app.post("/inventory/{product_id}/edit")
-def update_product(request: Request, product_id: int, name: str = Form(...), price: float = Form(...), cost: float = Form(...),
-                   sku: str = Form(""), category: str = Form("Otros"), stock: float = Form(0),
-                   min_stock: float = Form(2), unit: str = Form("Unidad")):
+def update_product(request: Request, product_id: int, name: str = Form(...), price: str = Form(...), cost: str = Form(...),
+                   sku: str = Form(""), category: str = Form("Otros"), stock: str = Form("0"),
+                   min_stock: str = Form("2"), unit: str = Form("Unidad")):
     redirect = admin_only(request)
     if redirect:
         return redirect
-    if price < 0 or cost < 0 or stock < 0 or min_stock < 0:
+    try:
+        price_value, cost_value = decimal_value(price), decimal_value(cost)
+        stock_value, min_stock_value = decimal_value(stock), decimal_value(min_stock)
+    except ValueError:
+        return RedirectResponse("/inventory?message=Ingresa%20valores%20numéricos%20válidos", status_code=303)
+    if price_value < 0 or cost_value < 0 or not valid_quantity_scale(stock_value, unit, allow_zero=True) or not valid_quantity_scale(min_stock_value, unit, allow_zero=True):
         return RedirectResponse("/inventory?message=Los%20valores%20no%20pueden%20ser%20negativos", status_code=303)
     try:
         with database() as db:
@@ -1176,7 +1197,7 @@ def update_product(request: Request, product_id: int, name: str = Form(...), pri
             result = db.execute(
                 """UPDATE products SET name=?,sku=?,category=?,price=?,cost=?,stock=?,min_stock=?,unit=?
                    WHERE id=? AND is_active=1""",
-                (name.strip(), sku.strip() or None, category.strip() or "Otros", price, cost, stock, min_stock,
+                (name.strip(), sku.strip() or None, category.strip() or "Otros", str(price_value), str(cost_value), str(stock_value), str(min_stock_value),
                  unit.strip() or "Unidad", product_id),
             )
             if result.rowcount == 0:
@@ -1474,11 +1495,9 @@ async def save_worker_shifts(request: Request):
 
 @app.get("/dashboard")
 def dashboard_page(request: Request):
-    redirect = require_login(request)
+    redirect = admin_only(request)
     if redirect:
         return redirect
-    if current_user(request)["role"] != "ADMIN":
-        return RedirectResponse("/pos", status_code=303)
     with database() as db:
         stats = db.execute("SELECT COUNT(*) AS count, COALESCE(SUM(total),0) AS total FROM sales WHERE status!='Anulada'").fetchone()
         low_stock = db.execute("SELECT COUNT(*) FROM products WHERE is_active=1 AND stock<=min_stock").fetchone()[0]
