@@ -11,8 +11,8 @@
     <label>Unidad de venta<input name="unit" value="{{ product.unit if product and product.unit else 'Unidad' }}" maxlength="30" required></label>
     <label>Precio de venta<input name="price" type="number" min="0" step="1" value="{{ product.price if product else '' }}" required></label>
     <label>Costo<input name="cost" type="number" min="0" step="1" value="{{ product.cost if product else '' }}" required></label>
-    <label>Existencias<input name="stock" type="number" min="0" step="0.01" value="{{ product.stock if product else 0 }}" required></label>
-    <label>Stock mínimo<input name="min_stock" type="number" min="0" step="0.01" value="{{ product.min_stock if product else 2 }}" required></label>
+    <label>Existencias<input name="stock" type="number" min="0" step="0.001" value="{{ product.stock if product else 0 }}" required></label>
+    <label>Stock mínimo<input name="min_stock" type="number" min="0" step="0.001" value="{{ product.min_stock if product else 2 }}" required></label>
     <div class="editor-actions"><a class="button button-secondary" href="/inventory">Cancelar</a><button class="button button-primary" type="submit">{% if mode == 'edit' %}Guardar cambios{% else %}Crear producto{% endif %}</button></div>
   </form>
 </section>
