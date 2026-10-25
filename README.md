@@ -10,7 +10,8 @@ En Windows PowerShell, desde la carpeta raíz:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-$env:SESSION_SECRET = "cambia-esto-por-un-secreto-largo"
+$env:SESSION_SECRET = "genera-un-secreto-aleatorio-largo"
+$env:INITIAL_ADMIN_PASSWORD = "define-una-clave-segura-para-la-cuenta-inicial"
 python -m uvicorn app:app --reload
 ```
 
@@ -18,14 +19,17 @@ Abre `http://127.0.0.1:8000`. Si ya tienes un entorno virtual `venv`, puedes act
 
 ## Acceso inicial
 
-En una base de datos nueva, se crean dos cuentas de demostración:
+En una base de datos nueva, se crea la cuenta inicial de administración solo si defines `INITIAL_ADMIN_PASSWORD`. Opcionalmente, `INITIAL_OPERATOR_PASSWORD` crea la cuenta inicial de caja. Ambas contraseñas se guardan como hash PBKDF2; no hay claves predeterminadas ni acceso `ADMIN` / `ADMIN`.
 
-- Administrador: `ADM-001` / `ADM - 999`
-- Caja: `CJ-101` / `OPE - 123`
+Las cuentas solo se agregan cuando la tabla de usuarios está vacía. Las contraseñas antiguas en texto claro siguen autenticándose para permitir la migración sin bloquear usuarios; después de un inicio válido se transforman automáticamente a PBKDF2. En producción, `SESSION_SECRET` y `APP_ENV=production` son obligatorios.
 
-El acceso administrativo principal también acepta `ADMIN` / `ADMIN`, únicamente al seleccionar el modo **ADMINISTRADOR** en el login.
+## Cálculos monetarios y cantidades
 
-Las cuentas solo se agregan cuando la tabla de usuarios está vacía. La contraseña del usuario se compara en el mismo formato normalizado que el sistema anterior.
+- El servidor calcula con `Decimal`, sin convertir precios, cantidades ni pagos a `float` durante la operación de venta.
+- La regla del punto de venta es COP en pesos enteros: cada subtotal de línea se redondea al peso más cercano usando `ROUND_HALF_UP`; los subtotales de línea se suman y el descuento se expresa en pesos enteros. El total es subtotal menos descuento (los impuestos aún no están configurados). El cambio usa la misma escala.
+- La caja permite editar la cantidad. Unidades y paquetes deben ser cantidades enteras. Productos cuyo campo `unit` sea `g`, `gr`, `gramo(s)`, `kg`, `kilo(s)` o `kilogramo(s)` admiten hasta tres decimales. La cantidad y las existencias deben usar la misma unidad base configurada en el producto: para un producto con precio y stock por kilogramo, 350 g se ingresan como `0.350 kg` (equivalente exacto a `350 / 1000`). Los paquetes se cuentan como paquetes completos; su contenido no cambia la unidad de inventario.
+- SQLite conserva las columnas existentes `REAL`: los cálculos se mantienen como `Decimal` en Python y se pasan como cadenas decimales al límite de SQLite, que continúa almacenando esos campos como `REAL`. El precio y subtotal aplicados también se copian a `sale_items` para conservar el importe histórico aunque cambie el catálogo.
+- Las pruebas de cálculo se ejecutan con `python -m unittest discover -s tests`. Una futura migración a PostgreSQL debe usar columnas `NUMERIC` explícitas (por ejemplo, importes `NUMERIC(18,2)` y cantidades `NUMERIC(18,3)`) y verificar las escalas con el esquema vigente de facturación electrónica DIAN antes de activar impuestos o facturación fiscal. La regla de redondeo de esta caja no sustituye esa validación.
 
 ## Alcance actual de la migración
 
