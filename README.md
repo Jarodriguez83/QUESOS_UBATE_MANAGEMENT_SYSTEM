@@ -1,6 +1,6 @@
 # Quesos Ubaté Management System
 
-La interfaz nueva está migrando a FastAPI, SQLite, Jinja, HTML, CSS y JavaScript sin framework. El archivo SQLite existente (`backend/database.db`) se conserva y FastAPI crea solamente las tablas que falten.
+La interfaz nueva está migrando a FastAPI, SQLite, Jinja, HTML, CSS y JavaScript sin framework. La aplicación vive en `app/main.py`; la configuración y el proveedor de conexiones SQLite están en `app/config.py` y `app/database.py`. El comando `uvicorn app:app` se conserva y el archivo SQLite existente (`backend/database.db`) mantiene su ubicación predeterminada.
 
 ## Ejecutar la versión FastAPI
 
@@ -52,6 +52,10 @@ Las cuentas solo se agregan cuando la tabla de usuarios está vacía. Las contra
 La integración Gmail/OAuth de la sesión nueva requiere crear credenciales OAuth en Google Cloud, habilitar Gmail API y autorizar la URI de redirección mostrada en pantalla. Las reglas de lectura se configuran según el formato real de los comprobantes del banco. Las cuentas heredadas pueden conservar contraseñas en texto plano; las cuentas de trabajadores nuevas usan hash PBKDF2. Antes de desplegar en internet, configura `SESSION_SECRET` con un valor secreto propio.
 
 El lector solicita permiso explícito para la cámara. Los navegadores requieren un contexto seguro: usa `localhost` durante desarrollo o HTTPS al abrir el sistema desde otro dispositivo. El decodificador se sirve como un archivo local del proyecto; si el navegador no puede leer el código, queda disponible la búsqueda manual por SKU.
+
+## Pruebas
+
+Instala las dependencias de prueba con `python -m pip install -r requirements-dev.txt` y ejecuta `python -m unittest discover -s tests`. La prueba de salud inicia FastAPI contra una base SQLite temporal y comprueba `GET /health` sin tocar la base local.
 
 ## Despliegue de pruebas en Render
 
