@@ -1,21 +1,21 @@
 # Quesos Ubaté Management System
 
-La interfaz nueva está migrando a FastAPI, SQLite, Jinja, HTML, CSS y JavaScript sin framework. La aplicación vive en `app/main.py`; la configuración y el proveedor de conexiones SQLite están en `app/config.py` y `app/database.py`. El comando `uvicorn app:app` se conserva y el archivo SQLite existente (`backend/database.db`) mantiene su ubicación predeterminada.
+La interfaz nueva está migrando a FastAPI, SQLite, Jinja, HTML, CSS y JavaScript sin framework. La aplicación vive en `app/main.py`; la configuración y el proveedor de conexiones SQLite están en `app/config.py` y `app/database.py`. El comando `uvicorn app:app` se conserva. En desarrollo local la base se crea en `.local/dev-data/database.db`; producción debe configurar su propio `DATA_DIR` persistente.
 
 ## Ejecutar la versión FastAPI
 
-En Windows PowerShell, desde la carpeta raíz:
+Para instalación local aislada, configuración de variables, ejecución y respaldos, sigue la [guía de desarrollo local](docs/desarrollo-local.md). Resumen en Windows PowerShell, desde la raíz:
 
 ```powershell
-python -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-$env:SESSION_SECRET = "genera-un-secreto-aleatorio-largo"
-$env:INITIAL_ADMIN_PASSWORD = "define-una-clave-segura-para-la-cuenta-inicial"
-python -m uvicorn app:app --reload
+python -m pip install -r requirements-dev.txt
+Copy-Item .env.example .env
+# Edita .env con secretos locales y una contraseña inicial de pruebas.
+python -m uvicorn app:app --reload --env-file .env
 ```
 
-Abre `http://127.0.0.1:8000`. Si ya tienes un entorno virtual `venv`, puedes activarlo en vez de crear `.venv`.
+Abre `http://127.0.0.1:8000`. El modo local usa `.local/dev-data/database.db`; no usa `backend/database.db`.
 
 ## Acceso inicial
 
