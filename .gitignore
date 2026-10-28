@@ -11,6 +11,7 @@ venv/
 # Variables de entorno
 .env
 .env.*
+!.env.example
 
 # Bases de datos locales
 *.db
@@ -18,6 +19,7 @@ venv/
 *.sqlite3
 *.db-shm
 *.db-wal
+.local/
 
 # VS Code
 .vscode/
