@@ -18,10 +18,11 @@ class Settings:
 
 def load_settings() -> Settings:
     root = Path(__file__).resolve().parent.parent
-    data_dir = Path(os.getenv("DATA_DIR", root / "backend")).expanduser()
-    database_path = Path(os.getenv("DATABASE_PATH", data_dir / "database.db")).expanduser()
-    uploads_dir = Path(os.getenv("UPLOADS_DIR", root / "static" / "uploads")).expanduser()
     app_env = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "")).strip().lower()
+    default_data_dir = root / "backend" if app_env in {"production", "prod"} else root / ".local" / "dev-data"
+    data_dir = Path(os.getenv("DATA_DIR", default_data_dir)).expanduser()
+    database_path = Path(os.getenv("DATABASE_PATH", data_dir / "database.db")).expanduser()
+    uploads_dir = Path(os.getenv("UPLOADS_DIR", data_dir / "uploads")).expanduser()
     session_secret = os.getenv("SESSION_SECRET")
     if app_env in {"production", "prod"} and not session_secret:
         raise RuntimeError("SESSION_SECRET must be set in production")
