@@ -254,7 +254,7 @@
     }
   }
 
-  async function acceptScannedCode(code, formatName = '') {
+  async function acceptScannedCode(code, formatName = '', closeAfterScan = true) {
     if (scannerLocked) return;
     scannerLocked = true;
     const card = findProductByCode(code);
@@ -265,14 +265,19 @@
       return;
     }
     await stopScanner();
+    const priorQuantity = cart.get(card.dataset.productId)?.quantity || 0;
     const added = addProductCard(card, true);
     if (added) {
       document.querySelector('#product-search').value = '';
       for (const productCard of grid.querySelectorAll('[data-product-id]')) productCard.hidden = false;
-      setScannerStatus(`${card.dataset.name} agregado al carrito.`, 'success');
-      window.setTimeout(() => {
-        if (!scannerDialog.hidden) closeScannerDialog();
-      }, 650);
+      setScannerStatus(priorQuantity
+        ? `Se agregó otra unidad de ${card.dataset.name}. Total en el carrito: ${cart.get(card.dataset.productId).quantity} ${card.dataset.unit || 'unidad'}.`
+        : `${card.dataset.name} agregado al carrito.`, 'success');
+      if (closeAfterScan) {
+        window.setTimeout(() => {
+          if (!scannerDialog.hidden) closeScannerDialog();
+        }, 650);
+      }
     }
     scannerLocked = false;
   }
@@ -337,11 +342,8 @@
   document.querySelector('#open-barcode-scanner').addEventListener('click', () => {
     scannerLocked = false;
     openScannerDialog();
-    setScannerStatus('La cámara se abrirá ahora. Permite el acceso si el navegador lo solicita.');
-    startScannerButton.focus({ preventScroll: true });
-    // The camera prompt is started from the user's click so it doesn't require
-    // a second interaction after the dialog opens.
-    startScannerButton.click();
+    setScannerStatus('Listo para escanear. Enfoca el campo de código o inicia la cámara.');
+    window.setTimeout(() => document.querySelector('#manual-product-code').focus({ preventScroll: true }), 0);
   });
 
   startScannerButton.addEventListener('click', async () => {
@@ -396,7 +398,9 @@
     event.preventDefault();
     const input = document.querySelector('#manual-product-code');
     if (!input.value.trim()) return;
-    await acceptScannedCode(input.value);
-    if (scannerDialog.open) input.select();
+    const code = input.value;
+    await acceptScannedCode(code, '', false);
+    input.value = '';
+    if (!scannerDialog.hidden) input.focus({ preventScroll: true });
   });
 })();
