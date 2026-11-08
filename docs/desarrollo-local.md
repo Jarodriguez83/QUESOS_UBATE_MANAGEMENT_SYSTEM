@@ -6,7 +6,7 @@ Esta guía usa una base de desarrollo independiente. No copies una base producti
 
 - Python **3.12** (el repositorio fija el parche recomendado en `.python-version`).
 - `pip` y soporte para crear entornos virtuales (`venv`).
-- Dependencias de ejecución de `requirements.txt`: FastAPI `>=0.115,<1.0`, Uvicorn `>=0.30,<1.0`, Jinja2 `>=3.1,<4.0`, `python-multipart >=0.0.9,<1.0`, `itsdangerous >=2.2,<3.0` y `python-dotenv >=1.0,<2.0`.
+- Dependencias de ejecución de `requirements.txt`: FastAPI `>=0.115,<1.0`, Uvicorn `>=0.30,<1.0`, Jinja2 `>=3.1,<4.0`, `python-multipart >=0.0.9,<1.0`, `itsdangerous >=2.2,<3.0`, `python-dotenv >=1.0,<2.0` y `tzdata >=2024.1,<2027` (datos IANA de zona horaria, necesarios en Windows).
 - Para las pruebas, `httpx >=0.27,<1.0`, incluido en `requirements-dev.txt`.
 
 ## Preparar el entorno
