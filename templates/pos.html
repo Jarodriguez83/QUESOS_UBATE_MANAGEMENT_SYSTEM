@@ -2,7 +2,7 @@
 {% block title %}Caja · Quesos Ubaté{% endblock %}
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', path='/css/scanner.css') }}?v=barcode-local-1">
-<div class="page-heading"><div><p class="eyebrow">PUNTO DE VENTA</p><h1>Venta de mostrador</h1><p class="muted">Selecciona productos para agregarlos al carrito.</p></div><span class="live-pill"><i></i> Caja activa</span></div>
+<div class="page-heading"><div><p class="eyebrow">PUNTO DE VENTA</p><h1>Venta de mostrador</h1><p class="muted">Busca productos o escanea su código para agregarlos al carrito.</p></div><span class="live-pill"><i></i> Caja activa</span></div>
 {% if message %}<div class="notice">{{ message }}</div>{% endif %}
 <div class="pos-layout">
   <section class="panel catalog-panel"><div class="panel-heading"><div><h2>Productos</h2><p>Selecciona una sección y agrega los artículos al carrito</p></div><div class="catalog-tools"><label class="search"><span>⌕</span><input id="product-search" placeholder="Buscar producto o SKU" aria-label="Buscar producto o SKU"></label><button class="button button-scan" type="button" id="open-barcode-scanner"><span aria-hidden="true">▦</span> Escanear</button></div></div>
@@ -28,11 +28,11 @@
 <section class="scanner-overlay" id="barcode-panel" role="dialog" aria-modal="true" aria-labelledby="scanner-title" hidden>
   <div class="scanner-dialog">
     <div class="scanner-header"><div><p class="eyebrow">LECTOR DE PRODUCTOS</p><h2 id="scanner-title">Escanear código de barras</h2></div><button type="button" class="scanner-close" id="close-barcode-scanner" aria-label="Cerrar lector">×</button></div>
-    <p class="muted scanner-instructions">Enfoca el código completo con buena iluminación. Para agregarlo al carrito, el código debe estar guardado en el campo SKU del producto.</p>
+    <p class="muted scanner-instructions">Conecta el lector tipo teclado, enfoca el campo y escanea. El lector debe enviar Enter al final. El código debe coincidir con el SKU guardado del producto. También puedes usar la cámara.</p>
     <div id="barcode-reader" class="barcode-reader"></div>
     <p id="scanner-status" class="scanner-status" role="status" aria-live="polite">La cámara se activará cuando pulses “Iniciar cámara”.</p>
     <div class="scanner-controls"><button type="button" class="button button-primary" id="start-barcode-camera">Iniciar cámara</button><button type="button" class="button button-secondary" id="stop-barcode-camera" hidden>Detener cámara</button></div>
-    <form class="manual-code-form" id="manual-code-form"><label for="manual-product-code">También puedes ingresar el SKU</label><div><input id="manual-product-code" autocomplete="off" placeholder="Ej. 7701234567890"><button type="submit" class="button button-secondary">Buscar SKU</button></div></form>
+    <form class="manual-code-form" id="manual-code-form"><label for="manual-product-code">Código del lector o SKU</label><div><input id="manual-product-code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Escanea o escribe un código"><button type="submit" class="button button-secondary">Agregar producto</button></div><small>Al escanear, el lector escribe el código aquí y pulsa Enter.</small></form>
   </div>
 </section>
 <script src="{{ url_for('static', path='/js/html5-qrcode.min.js') }}?v=2.3.8" defer></script>
