@@ -124,23 +124,14 @@
     if (!item) return;
     const parsedQuantity = Number(value);
     const quantity = Number.isFinite(parsedQuantity) ? Math.round(parsedQuantity * 1000) / 1000 : parsedQuantity;
-    const card = grid.querySelector(`[data-product-id="${CSS.escape(String(id))}"]`);
     if (!Number.isFinite(quantity) || quantity <= 0) cart.delete(String(id));
-    else if (quantity > Number(card?.dataset.stock || 0)) {
-      window.alert('La cantidad supera las existencias disponibles.');
-      return;
-    } else item.quantity = quantity;
+    else item.quantity = quantity;
     drawCart();
   }
 
   function addProductCard(card, fromScanner = false) {
     const id = card.dataset.productId;
     const item = cart.get(id) || { id, name: card.dataset.name, price: Number(card.dataset.price), unit: card.dataset.unit, quantity: 0 };
-    if (item.quantity >= Number(card.dataset.stock)) {
-      if (fromScanner) setScannerStatus(`No hay existencias disponibles de ${card.dataset.name}.`, 'error');
-      else window.alert('No hay más unidades disponibles de este producto.');
-      return false;
-    }
     item.quantity += 1;
     cart.set(id, item);
     drawCart();
