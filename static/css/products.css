@@ -64,6 +64,19 @@
 .product-detail-grid > div { padding: 14px 0; border-bottom: 1px solid #eef1ee; }
 .product-detail-grid dt { color: #829087; font-size: 10px; }
 .product-detail-grid dd { margin: 6px 0 0; color: #293d32; font-size: 13px; font-weight: 700; }
+.movement-summary { display: flex; gap: 36px; margin-bottom: 14px; padding: 18px 22px; }
+.movement-summary div { display: grid; gap: 5px; }
+.movement-summary span { color: #829087; font-size: 10px; }
+.movement-summary strong { color: #293d32; font-size: 14px; }
+.movement-filter, .movement-admin { margin-bottom: 14px; padding: 18px 22px; }
+.movement-filter form, .movement-admin form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.movement-filter label, .movement-admin label { display: grid; gap: 5px; min-width: 145px; flex: 1; color: #617267; font-size: 11px; }
+.movement-filter input, .movement-filter select, .movement-admin input, .movement-admin select { min-height: 38px; padding: 8px 10px; border: 1px solid #dce5de; border-radius: 8px; color: #293d32; background: #fff; font: inherit; }
+.movement-admin h2 { margin: 0 0 5px; color: #293d32; font: 700 14px Manrope, sans-serif; }
+.movement-admin > .muted { margin: 0 0 14px; font-size: 11px; }
+.movement-admin .movement-notes { flex: 2; }
+.movement-positive { color: #287044 !important; font-weight: 700; }
+.movement-negative { color: #a74735 !important; font-weight: 700; }
 
 @media (max-width: 760px) {
   .product-crud-create,
@@ -76,6 +89,9 @@
   .product-editor .product-form { grid-template-columns: minmax(0, 1fr); }
   .editor-actions { grid-column: auto; }
   .product-detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .movement-summary { flex-direction: column; gap: 14px; }
+  .movement-filter form, .movement-admin form { align-items: stretch; flex-direction: column; }
+  .movement-filter label, .movement-admin label { min-width: 0; }
 }
 
 @media (max-width: 380px) {
