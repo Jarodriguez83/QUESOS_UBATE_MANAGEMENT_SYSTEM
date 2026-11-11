@@ -98,6 +98,15 @@ def initialize_database() -> None:
                 stock REAL NOT NULL DEFAULT 0, min_stock REAL DEFAULT 2,
                 unit TEXT DEFAULT 'Unidad', is_active INTEGER DEFAULT 1
             );
+            CREATE TABLE IF NOT EXISTS inventory_movements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL REFERENCES products(id),
+                movement_type TEXT NOT NULL CHECK(movement_type IN ('Compra','Venta','Devolución','Ajuste','Corrección')),
+                quantity REAL NOT NULL CHECK(quantity != 0),
+                stock_before REAL NOT NULL, stock_after REAL NOT NULL,
+                occurred_at TEXT NOT NULL, user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                user_name TEXT NOT NULL, notes TEXT, source_type TEXT, source_id INTEGER
+            );
             CREATE TABLE IF NOT EXISTS product_categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -212,6 +221,14 @@ def initialize_database() -> None:
             FROM purchases p LEFT JOIN suppliers s ON s.id=p.supplier_id""")
         for row in db.execute("SELECT DISTINCT category FROM products WHERE TRIM(COALESCE(category,'')) != ''"):
             db.execute("INSERT OR IGNORE INTO product_categories(name) VALUES(?)", (row["category"].strip(),))
+        db.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_inventory_movements_product_date
+                ON inventory_movements(product_id, occurred_at DESC, id DESC);
+            CREATE TRIGGER IF NOT EXISTS inventory_movements_no_update
+                BEFORE UPDATE ON inventory_movements BEGIN SELECT RAISE(ABORT, 'inventory movements are immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS inventory_movements_no_delete
+                BEFORE DELETE ON inventory_movements BEGIN SELECT RAISE(ABORT, 'inventory movements are immutable'); END;
+        """)
         if db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
             today = datetime.now().date().isoformat()
             initial_users = []
@@ -250,6 +267,12 @@ def initialize_database() -> None:
                 [("Queso Campesino Ubaté", "Q001", "Quesos", 14000, 9500, 24, 5, "Bloque"),
                  ("Colaciones de Ubaté Caja", "A001", "Acompañantes", 10000, 6500, 14, 4, "Caja")],
             )
+        db.execute("""INSERT INTO inventory_movements(product_id,movement_type,quantity,stock_before,stock_after,
+            occurred_at,user_name,notes,source_type)
+            SELECT p.id,'Ajuste',p.stock,0,p.stock,?, 'Sistema','Saldo inicial al activar el historial','Apertura'
+            FROM products p WHERE NOT EXISTS
+              (SELECT 1 FROM inventory_movements m WHERE m.product_id=p.id) AND p.stock != 0""",
+            (datetime.now(ZoneInfo("America/Bogota")).isoformat(),))
         for row in db.execute("SELECT DISTINCT category FROM products WHERE TRIM(COALESCE(category,'')) != ''"):
             db.execute("INSERT OR IGNORE INTO product_categories(name) VALUES(?)", (row["category"].strip(),))
 
@@ -428,6 +451,26 @@ def render(request: Request, page: str, **context):
     )
 
 
+def record_inventory_movement(db, request: Request, product_id: int, movement_type: str,
+                              quantity, occurred_at: str, *, notes: str = "",
+                              source_type: str | None = None, source_id: int | None = None):
+    """Append an immutable stock event and update the cached product balance atomically."""
+    amount = decimal_value(quantity)
+    if amount == ZERO:
+        return
+    product = db.execute("SELECT stock FROM products WHERE id=?", (product_id,)).fetchone()
+    if not product:
+        raise ValueError("Producto no encontrado")
+    before = decimal_value(product["stock"])
+    after = before + amount
+    user = current_user(request) or {}
+    db.execute("""INSERT INTO inventory_movements(product_id,movement_type,quantity,stock_before,stock_after,
+        occurred_at,user_id,user_name,notes,source_type,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+        (product_id, movement_type, str(amount), str(before), str(after), occurred_at,
+         user.get("id"), user.get("name") or "Sistema", notes or None, source_type, source_id))
+    db.execute("UPDATE products SET stock=? WHERE id=?", (str(after), product_id))
+
+
 def require_login(request: Request):
     if not current_user(request):
         return RedirectResponse("/login", status_code=303)
@@ -565,9 +608,7 @@ async def create_sale(request: Request):
             for item in cart:
                 product = db.execute("SELECT * FROM products WHERE id=? AND is_active=1", (int(item["id"]),)).fetchone()
                 quantity = decimal_value(item["quantity"])
-                stock = decimal_value(product["stock"]) if product else ZERO
-                if (not product or not valid_quantity_scale(quantity, product["unit"])
-                        or quantity > stock):
+                if not product or not valid_quantity_scale(quantity, product["unit"]):
                     raise ValueError("Producto o cantidad inválidos")
                 price = decimal_value(product["price"])
                 subtotal = line_subtotal(price, quantity)
@@ -602,7 +643,9 @@ async def create_sale(request: Request):
             for product, quantity, price, subtotal in normalized:
                 db.execute("""INSERT INTO sale_items(sale_id,product_id,quantity,unit_price,subtotal,tax_rate,tax_amount)
                     VALUES(?,?,?,?,?,0,0)""", (cursor.lastrowid, product["id"], str(quantity), str(price), str(subtotal)))
-                db.execute("UPDATE products SET stock=stock-? WHERE id=?", (str(quantity), product["id"]))
+                record_inventory_movement(db, request, product["id"], "Venta", -quantity,
+                                          created_at, notes=f"Factura {invoice}",
+                                          source_type="Venta", source_id=cursor.lastrowid)
             db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
                        (created_at, "INFO", f"Venta facturada: {invoice}, total {final_total:.2f}"))
         return RedirectResponse(f"/sales/{cursor.lastrowid}/receipt", status_code=303)
@@ -946,7 +989,9 @@ def delete_cash_transaction(request: Request, transaction_id: int):
             if sale and sale["status"] != "Anulada":
                 for item in db.execute("SELECT product_id,quantity FROM sale_items WHERE sale_id=?", (transaction["source_sale_id"],)):
                     if item["product_id"]:
-                        db.execute("UPDATE products SET stock=stock+? WHERE id=?", (item["quantity"], item["product_id"]))
+                        record_inventory_movement(db, request, item["product_id"], "Devolución",
+                            item["quantity"], now, notes=f"Anulación de factura {sale['invoice_number']}",
+                            source_type="Anulación venta", source_id=transaction["source_sale_id"])
                 db.execute("UPDATE sales SET status='Anulada' WHERE id=?", (transaction["source_sale_id"],))
         db.execute("UPDATE cash_transactions SET deleted_at=? WHERE id=?", (now, transaction_id))
         db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
@@ -965,6 +1010,86 @@ def inventory_page(request: Request, message: str | None = None):
         active_categories = [category for category in categories if category["is_active"]]
     return render(request, "inventory.html", products=products, categories=categories,
                   active_categories=active_categories, message=message)
+
+
+@app.get("/inventory/movements")
+def inventory_movements_page(request: Request, product_id: int | None = None,
+                             start_date: str | None = None, end_date: str | None = None,
+                             movement_type: str | None = None, message: str | None = None):
+    redirect = require_login(request)
+    if redirect:
+        return redirect
+    allowed = {"Compra", "Venta", "Devolución", "Ajuste", "Corrección"}
+    if movement_type not in allowed:
+        movement_type = None
+    conditions, params = [], []
+    if product_id:
+        conditions.append("m.product_id=?"); params.append(product_id)
+    if start_date:
+        conditions.append("substr(m.occurred_at,1,10)>=?"); params.append(start_date)
+    if end_date:
+        conditions.append("substr(m.occurred_at,1,10)<=?"); params.append(end_date)
+    if movement_type:
+        conditions.append("m.movement_type=?"); params.append(movement_type)
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    with database() as db:
+        products = db.execute("SELECT id,name,stock,unit FROM products ORDER BY name").fetchall()
+        movements = db.execute(f"""SELECT m.*,p.name AS product_name,p.unit FROM inventory_movements m
+            JOIN products p ON p.id=m.product_id {where} ORDER BY m.occurred_at DESC,m.id DESC LIMIT 500""",
+            params).fetchall()
+        selected = db.execute("SELECT * FROM products WHERE id=?", (product_id,)).fetchone() if product_id else None
+    return render(request, "inventory_movements.html", movements=movements, products=products,
+        selected_product=selected, selected_product_id=product_id, start_date=start_date or "",
+        end_date=end_date or "", movement_type=movement_type or "", movement_types=sorted(allowed), message=message)
+
+
+@app.post("/inventory/movements")
+def create_inventory_movement(request: Request, product_id: int = Form(...), movement_type: str = Form(...),
+                              quantity: str = Form(...), direction: str = Form("entrada"),
+                              notes: str = Form("")):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    valid_types = {"Compra", "Devolución", "Ajuste", "Corrección"}
+    try:
+        amount = decimal_value(quantity)
+    except (ValueError, TypeError):
+        return RedirectResponse("/inventory/movements?message=Ingresa%20una%20cantidad%20válida", status_code=303)
+    if movement_type not in valid_types or amount <= 0 or direction not in {"entrada", "salida"}:
+        return RedirectResponse("/inventory/movements?message=Tipo%20o%20cantidad%20de%20movimiento%20inválido", status_code=303)
+    now = datetime.now(ZoneInfo("America/Bogota")).isoformat()
+    try:
+        with database() as db:
+            product = db.execute("SELECT unit FROM products WHERE id=?", (product_id,)).fetchone()
+            if not product or not valid_quantity_scale(amount, product["unit"]):
+                return RedirectResponse("/inventory/movements?message=Producto%20o%20cantidad%20inválidos", status_code=303)
+            delta = amount if direction == "entrada" else -amount
+            record_inventory_movement(db, request, product_id, movement_type, delta, now, notes=notes.strip())
+    except ValueError:
+        return RedirectResponse("/inventory/movements?message=No%20se%20pudo%20registrar%20el%20movimiento", status_code=303)
+    return RedirectResponse(f"/inventory/movements?product_id={product_id}&message=Movimiento%20registrado", status_code=303)
+
+
+@app.post("/inventory/count")
+def reconcile_inventory_count(request: Request, product_id: int = Form(...), physical_stock: str = Form(...),
+                              notes: str = Form("")):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    try:
+        physical = decimal_value(physical_stock)
+    except (ValueError, TypeError):
+        return RedirectResponse(f"/inventory/movements?product_id={product_id}&message=Cantidad%20física%20inválida", status_code=303)
+    now = datetime.now(ZoneInfo("America/Bogota")).isoformat()
+    with database() as db:
+        product = db.execute("SELECT stock,unit FROM products WHERE id=?", (product_id,)).fetchone()
+        if not product or not valid_quantity_scale(physical, product["unit"], allow_zero=True):
+            return RedirectResponse(f"/inventory/movements?product_id={product_id}&message=Cantidad%20física%20inválida", status_code=303)
+        difference = physical - decimal_value(product["stock"])
+        if difference != ZERO:
+            record_inventory_movement(db, request, product_id, "Ajuste", difference, now,
+                notes=(notes.strip() or "Conteo físico") + f" · Diferencia física: {difference}")
+    return RedirectResponse(f"/inventory/{product_id}/movements?message=Conteo%20físico%20conciliado", status_code=303)
 
 
 def admin_only(request: Request):
@@ -1120,13 +1245,24 @@ def create_product(request: Request, name: str = Form(...), price: str = Form(..
         with database() as db:
             if not db.execute("SELECT 1 FROM product_categories WHERE name=? COLLATE NOCASE AND is_active=1", (category.strip(),)).fetchone():
                 return RedirectResponse("/inventory?message=Selecciona%20una%20sección%20activa", status_code=303)
-            db.execute("INSERT INTO products(name,sku,category,price,cost,stock,min_stock,unit) VALUES(?,?,?,?,?,?,?,?)",
-                       (name.strip(), sku.strip() or None, category.strip() or "Otros", str(price_value), str(cost_value), str(stock_value), str(min_stock_value), unit.strip() or "Unidad"))
+            cursor = db.execute("INSERT INTO products(name,sku,category,price,cost,stock,min_stock,unit) VALUES(?,?,?,?,?,0,?,?)",
+                       (name.strip(), sku.strip() or None, category.strip() or "Otros", str(price_value), str(cost_value), str(min_stock_value), unit.strip() or "Unidad"))
+            if stock_value:
+                record_inventory_movement(db, request, cursor.lastrowid, "Ajuste", stock_value,
+                    datetime.now(ZoneInfo("America/Bogota")).isoformat(), notes="Saldo inicial del producto",
+                    source_type="Apertura")
             db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
                        (datetime.now(timezone.utc).isoformat(), "INFO", f"Producto registrado: {name.strip()}"))
     except sqlite3.IntegrityError:
         return RedirectResponse("/inventory?message=El%20SKU%20ya%20está%20en%20uso", status_code=303)
     return RedirectResponse("/inventory?message=Producto%20guardado", status_code=303)
+
+
+@app.get("/inventory/{product_id}/movements")
+def product_inventory_movements(request: Request, product_id: int, start_date: str | None = None,
+                                end_date: str | None = None, movement_type: str | None = None,
+                                message: str | None = None):
+    return inventory_movements_page(request, product_id, start_date, end_date, movement_type, message)
 
 
 @app.get("/inventory/{product_id}")
@@ -1156,26 +1292,26 @@ def edit_product_page(request: Request, product_id: int):
 
 @app.post("/inventory/{product_id}/edit")
 def update_product(request: Request, product_id: int, name: str = Form(...), price: str = Form(...), cost: str = Form(...),
-                   sku: str = Form(""), category: str = Form("Otros"), stock: str = Form("0"),
+                   sku: str = Form(""), category: str = Form("Otros"),
                    min_stock: str = Form("2"), unit: str = Form("Unidad")):
     redirect = admin_only(request)
     if redirect:
         return redirect
     try:
         price_value, cost_value = decimal_value(price), decimal_value(cost)
-        stock_value, min_stock_value = decimal_value(stock), decimal_value(min_stock)
+        min_stock_value = decimal_value(min_stock)
     except ValueError:
         return RedirectResponse("/inventory?message=Ingresa%20valores%20numéricos%20válidos", status_code=303)
-    if price_value < 0 or cost_value < 0 or not valid_quantity_scale(stock_value, unit, allow_zero=True) or not valid_quantity_scale(min_stock_value, unit, allow_zero=True):
+    if price_value < 0 or cost_value < 0 or not valid_quantity_scale(min_stock_value, unit, allow_zero=True):
         return RedirectResponse("/inventory?message=Los%20valores%20no%20pueden%20ser%20negativos", status_code=303)
     try:
         with database() as db:
             if not db.execute("SELECT 1 FROM product_categories WHERE name=? COLLATE NOCASE AND is_active=1", (category.strip(),)).fetchone():
                 return RedirectResponse("/inventory?message=Selecciona%20una%20sección%20activa", status_code=303)
             result = db.execute(
-                """UPDATE products SET name=?,sku=?,category=?,price=?,cost=?,stock=?,min_stock=?,unit=?
+                """UPDATE products SET name=?,sku=?,category=?,price=?,cost=?,min_stock=?,unit=?
                    WHERE id=? AND is_active=1""",
-                (name.strip(), sku.strip() or None, category.strip() or "Otros", str(price_value), str(cost_value), str(stock_value), str(min_stock_value),
+                (name.strip(), sku.strip() or None, category.strip() or "Otros", str(price_value), str(cost_value), str(min_stock_value),
                  unit.strip() or "Unidad", product_id),
             )
             if result.rowcount == 0:
