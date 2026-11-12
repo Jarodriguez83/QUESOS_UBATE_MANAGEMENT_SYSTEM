@@ -21,7 +21,7 @@
       <tr><td><strong>{{ product.name }}</strong></td><td>{{ product.sku or '—' }}</td><td>{{ product.category or 'Otros' }}</td>
         <td>{{ product.stock }} {{ product.unit or 'Unidad' }}</td><td>${{ '{:,.0f}'.format(product.price).replace(',', '.') }}</td>
         <td><span class="stock-badge {% if product.stock <= product.min_stock %}stock-low{% endif %}">{% if product.stock <= product.min_stock %}Reponer{% else %}Disponible{% endif %}</span></td>
-        <td><div class="product-actions"><a class="action-link" href="/inventory/{{ product.id }}">Ver</a>
+        <td><div class="product-actions"><a class="action-link" href="/inventory/{{ product.id }}">Ver</a><a class="action-link" href="/inventory/{{ product.id }}/movements">Historial</a>
           {% if user.role == 'ADMIN' %}<a class="action-link" href="/inventory/{{ product.id }}/edit">Editar</a>
           <form action="/inventory/{{ product.id }}/delete" method="post" onsubmit="return confirm('¿Eliminar este producto del catálogo? El historial de ventas se conservará.');"><button class="action-link action-delete" type="submit">Eliminar</button></form>{% endif %}
         </div></td>
