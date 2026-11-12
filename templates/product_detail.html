@@ -12,6 +12,7 @@
     <div><dt>Existencias</dt><dd>{{ product.stock }}</dd></div><div><dt>Stock mínimo</dt><dd>{{ product.min_stock }}</dd></div>
     <div><dt>Estado</dt><dd>{% if product.is_active %}Activo{% else %}Eliminado del catálogo{% endif %}</dd></div>
   </dl>
+  <a class="button button-secondary" href="/inventory/{{ product.id }}/movements">Ver historial de movimientos</a>
   {% if user.role == 'ADMIN' and product.is_active %}<a class="button button-primary" href="/inventory/{{ product.id }}/edit">Editar producto</a>{% endif %}
 </section>
 {% endblock %}
