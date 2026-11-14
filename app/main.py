@@ -149,6 +149,16 @@ def initialize_database() -> None:
                 paid_detail TEXT,
                 deleted_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0),
+                occurred_at TEXT NOT NULL, description TEXT NOT NULL,
+                payment_method TEXT NOT NULL CHECK(payment_method IN ('Caja','Transferencia','Tarjeta','Otro')),
+                responsible_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                responsible_name TEXT NOT NULL,
+                cash_transaction_id INTEGER UNIQUE REFERENCES cash_transactions(id) ON DELETE SET NULL,
+                deleted_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS cash_closures (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 invoice_number TEXT UNIQUE NOT NULL,
@@ -219,6 +229,7 @@ def initialize_database() -> None:
         db.execute("""INSERT OR IGNORE INTO cash_transactions(concept,amount,description,supplier_name,occurred_at,source_purchase_id,supplier_id)
             SELECT 'PROVEEDOR',p.total,'Compra a proveedor',s.name,p.created_at,p.id,p.supplier_id
             FROM purchases p LEFT JOIN suppliers s ON s.id=p.supplier_id""")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_expenses_date_category ON expenses(occurred_at DESC,category)")
         for row in db.execute("SELECT DISTINCT category FROM products WHERE TRIM(COALESCE(category,'')) != ''"):
             db.execute("INSERT OR IGNORE INTO product_categories(name) VALUES(?)", (row["category"].strip(),))
         db.executescript("""
@@ -824,6 +835,7 @@ def paid_page(request: Request, message: str | None = None):
         transactions = db.execute("""SELECT t.*,s.name AS linked_supplier FROM cash_transactions t
             LEFT JOIN suppliers s ON s.id=t.supplier_id
             WHERE t.concept IN ('PROVEEDOR','PAGADO') AND t.deleted_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.cash_transaction_id=t.id AND e.deleted_at IS NULL)
             ORDER BY t.occurred_at DESC,t.id DESC""").fetchall()
     paid_transactions = []
     for row in transactions:
@@ -873,6 +885,72 @@ def create_paid(request: Request, payment_type: str = Form(...), amount: float =
     return RedirectResponse("/paid?message=Pagado%20registrado%20y%20agregado%20a%20Transacciones", status_code=303)
 
 
+EXPENSE_CATEGORIES = ("Servicios", "Transporte", "Arriendo", "Mantenimiento", "Compras menores",
+                      "Nómina", "Impuestos", "Alimentación", "Otros")
+EXPENSE_PAYMENT_METHODS = ("Caja", "Transferencia", "Tarjeta", "Otro")
+
+
+@app.get("/expenses")
+def expenses_page(request: Request, category: str | None = None, start_date: str | None = None,
+                  end_date: str | None = None, message: str | None = None):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    if category not in EXPENSE_CATEGORIES:
+        category = None
+    filters, params = ["e.deleted_at IS NULL"], []
+    if category:
+        filters.append("e.category=?"); params.append(category)
+    if start_date:
+        filters.append("substr(e.occurred_at,1,10)>=?"); params.append(start_date)
+    if end_date:
+        filters.append("substr(e.occurred_at,1,10)<=?"); params.append(end_date)
+    where = " AND ".join(filters)
+    with database() as db:
+        expenses = db.execute(f"SELECT e.* FROM expenses e WHERE {where} ORDER BY e.occurred_at DESC,e.id DESC", params).fetchall()
+        totals = db.execute(f"""SELECT COALESCE(SUM(amount),0) total,
+            COALESCE(SUM(CASE WHEN payment_method='Caja' THEN amount ELSE 0 END),0) cash_total,
+            COUNT(*) count FROM expenses e WHERE {where}""", params).fetchone()
+        local_today = datetime.now(ZoneInfo("America/Bogota")).date()
+        month_start = local_today.replace(day=1).isoformat()
+        next_month = (local_today.replace(day=28) + timedelta(days=4)).replace(day=1).isoformat()
+        monthly_total = db.execute("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE deleted_at IS NULL AND substr(occurred_at,1,10)>=? AND substr(occurred_at,1,10)<?", (month_start, next_month)).fetchone()[0]
+    return render(request, "expenses.html", expenses=expenses, categories=EXPENSE_CATEGORIES,
+        selected_category=category or "", start_date=start_date or "", end_date=end_date or "",
+        totals=totals, monthly_total=monthly_total, today=local_today.isoformat(), message=message)
+
+
+@app.post("/expenses/create")
+def create_expense(request: Request, category: str = Form(...), amount: str = Form(...),
+                   expense_date: str = Form(...), description: str = Form(...),
+                   payment_method: str = Form(...)):
+    redirect = admin_only(request)
+    if redirect:
+        return redirect
+    description = description.strip()
+    try:
+        value = decimal_value(amount)
+        expense_day = date.fromisoformat(expense_date)
+    except (ValueError, TypeError):
+        return RedirectResponse("/expenses?message=Revisa%20el%20valor%20y%20la%20fecha", status_code=303)
+    if value <= 0 or not description or category not in EXPENSE_CATEGORIES or payment_method not in EXPENSE_PAYMENT_METHODS:
+        return RedirectResponse("/expenses?message=Completa%20los%20datos%20del%20gasto%20correctamente", status_code=303)
+    occurred_at = datetime.combine(expense_day, datetime.min.time(), tzinfo=ZoneInfo("America/Bogota")).replace(hour=12).isoformat()
+    actor = current_user(request)
+    with database() as db:
+        cursor = db.execute("""INSERT INTO expenses(category,amount,occurred_at,description,payment_method,
+            responsible_user_id,responsible_name) VALUES(?,?,?,?,?,?,?)""",
+            (category, str(value), occurred_at, description, payment_method, actor["id"], actor["name"]))
+        if payment_method == "Caja":
+            cash_id = db.execute("""INSERT INTO cash_transactions(concept,amount,description,occurred_at,paid_name,paid_detail)
+                VALUES('PAGADO',?,?,?,?,?)""",
+                (str(value), f"Gasto · {category}", occurred_at, category, description)).lastrowid
+            db.execute("UPDATE expenses SET cash_transaction_id=? WHERE id=?", (cash_id, cursor.lastrowid))
+        db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
+                   (datetime.now(timezone.utc).isoformat(), "INFO", f"Gasto registrado: {category}, {value:.2f}, medio {payment_method}"))
+    return RedirectResponse("/expenses?message=Gasto%20registrado", status_code=303)
+
+
 @app.post("/paid/{transaction_id}/edit")
 def update_paid(request: Request, transaction_id: int, amount: float = Form(...),
                 paid_detail: str = Form(...), supplier_id: int | None = Form(None), paid_name: str = Form("")):
@@ -884,7 +962,9 @@ def update_paid(request: Request, transaction_id: int, amount: float = Form(...)
     if amount <= 0 or not paid_detail:
         return RedirectResponse("/paid?message=El%20detalle%20es%20obligatorio%20y%20el%20monto%20debe%20ser%20mayor%20a%20cero", status_code=303)
     with database() as db:
-        transaction = db.execute("SELECT * FROM cash_transactions WHERE id=? AND deleted_at IS NULL AND concept IN ('PROVEEDOR','PAGADO')", (transaction_id,)).fetchone()
+        transaction = db.execute("""SELECT * FROM cash_transactions WHERE id=? AND deleted_at IS NULL
+            AND concept IN ('PROVEEDOR','PAGADO') AND NOT EXISTS
+              (SELECT 1 FROM expenses e WHERE e.cash_transaction_id=cash_transactions.id AND e.deleted_at IS NULL)""", (transaction_id,)).fetchone()
         if not transaction:
             return RedirectResponse("/paid?message=Pagado%20no%20encontrado", status_code=303)
         if transaction["concept"] == "PROVEEDOR":
@@ -915,7 +995,8 @@ def delete_paid(request: Request, transaction_id: int):
     with database() as db:
         db.execute("BEGIN IMMEDIATE")
         transaction = db.execute("""SELECT * FROM cash_transactions WHERE id=? AND deleted_at IS NULL
-            AND concept IN ('PROVEEDOR','PAGADO')""", (transaction_id,)).fetchone()
+            AND concept IN ('PROVEEDOR','PAGADO') AND NOT EXISTS
+              (SELECT 1 FROM expenses e WHERE e.cash_transaction_id=cash_transactions.id AND e.deleted_at IS NULL)""", (transaction_id,)).fetchone()
         if not transaction:
             return RedirectResponse("/paid?message=Pagado%20no%20encontrado", status_code=303)
         db.execute("UPDATE cash_transactions SET deleted_at=? WHERE id=?", (now, transaction_id))
@@ -994,6 +1075,7 @@ def delete_cash_transaction(request: Request, transaction_id: int):
                             source_type="Anulación venta", source_id=transaction["source_sale_id"])
                 db.execute("UPDATE sales SET status='Anulada' WHERE id=?", (transaction["source_sale_id"],))
         db.execute("UPDATE cash_transactions SET deleted_at=? WHERE id=?", (now, transaction_id))
+        db.execute("UPDATE expenses SET deleted_at=? WHERE cash_transaction_id=? AND deleted_at IS NULL", (now, transaction_id))
         db.execute("INSERT INTO audit_logs(timestamp,level,message) VALUES(?,?,?)",
                    (now, "INFO", f"Movimiento de caja eliminado/anulado: ID {transaction_id}"))
     return RedirectResponse("/transactions?message=Movimiento%20eliminado%20del%20libro%20de%20caja", status_code=303)
