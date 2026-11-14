@@ -18,7 +18,7 @@
     <nav class="nav-links">
       <a href="/pos">Caja</a><a href="/inventory">Productos</a><a href="/inventory/movements">Movimientos</a>
       <a href="/transactions">Transacciones</a>
-      {% if user.role == 'ADMIN' %}<a href="/dashboard">Resumen</a><a href="/payment-confirmations">Confirmación pagos</a><a href="/cash-closures">Cierre de caja</a><a href="/paid">Pagados</a><a href="/suppliers">Proveedores</a><a href="/workers">Trabajadores</a><a href="/workers/shifts">Turnos</a>{% endif %}
+      {% if user.role == 'ADMIN' %}<a href="/dashboard">Resumen</a><a href="/payment-confirmations">Confirmación pagos</a><a href="/cash-closures">Cierre de caja</a><a href="/expenses">Gastos</a><a href="/paid">Pagados</a><a href="/suppliers">Proveedores</a><a href="/workers">Trabajadores</a><a href="/workers/shifts">Turnos</a>{% endif %}
     </nav>
     <div class="user-menu"><span>{{ user.name }}<small>{{ user.role }}</small></span><form action="/logout" method="post"><button class="button button-quiet" type="submit">Salir</button></form></div>
   </header>
